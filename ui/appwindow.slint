@@ -1,0 +1,24 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+import { ProgressBar } from "progressbar.slint";
+
+export component AppWindow inherits Window {
+    in-out property<float> counter: 0.0;
+    callback request-increase-value();
+
+    title: "DVA SMP Launcher";
+
+    VerticalBox {
+        ProgressBar {
+            progress: root.counter;
+        }
+        Text {
+            text: "Counter: \{root.counter}";
+        }
+        Button {
+            text: "Increase value";
+            clicked => {
+                root.request-increase-value();
+            }
+        }
+    }
+}

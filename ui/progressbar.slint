@@ -1,0 +1,22 @@
+import { StyleMetrics } from "std-widgets.slint";
+
+export component ProgressBar inherits Rectangle {
+    in property <float> progress: 0.0;
+
+    min-width: 44px;
+    height: 8px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    background: StyleMetrics.dark-color-scheme ? #505050: #BDBDBD;
+    border_radius: 2px;
+    clip: true;
+
+    i_track := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width * root.progress;
+        height: 100%;
+        background: StyleMetrics.dark-color-scheme ? #01fec5: #1d9bf2;
+        border_radius: root.border_radius;
+    }
+}
