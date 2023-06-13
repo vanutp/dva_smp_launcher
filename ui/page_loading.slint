@@ -1,0 +1,13 @@
+import { VerticalBox } from "std-widgets.slint";
+
+export component PageLoading inherits VerticalBox {
+    height: 100px;
+    width: 100%;
+    Text {
+        text: "Загрузка...";
+        font-size: 20px;
+    }
+    Text {
+        text: "Если вы видите это окно дольше пары секунд, то что-то пошло не так";
+    }
+}
