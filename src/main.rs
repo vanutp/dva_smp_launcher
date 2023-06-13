@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -27,7 +27,7 @@ struct ElyByOauthTokenResponse {
 }
 
 struct ActixAppState {
-    access_token: Option<String>,
+    access_token: Mutex<Option<String>>,
 }
 
 
@@ -47,9 +47,9 @@ fn main() {
             webbrowser::open(url.as_str()).unwrap();
 
             let app_data = web::Data::new(ActixAppState {
-                access_token: None,
+                access_token: Mutex::new(None),
             });
-            let actix_app_data = app_data.clone();
+            let outer_app_data = app_data.clone();
 
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -59,7 +59,7 @@ fn main() {
                     let got_response_flag = Arc::new(Notify::new());
                     let http_server = HttpServer::new(clone!([got_response_flag], move || {
                         App::new()
-                        .app_data(actix_app_data)
+                        .app_data(app_data.clone())
                         .route(
                             "/callback",
                             web::get().to(clone!([got_response_flag], move |req: web::Query<ElyByOauthCallbackData>, data: web::Data<ActixAppState>| clone!([got_response_flag], async move {
@@ -80,7 +80,8 @@ fn main() {
                                     .await
                                     .unwrap();
                                 assert_eq!(token_response.token_type, "Bearer");
-                                data.access_token = Some(token_response.access_token);
+                                let mut access_token = data.access_token.lock().unwrap();
+                                *access_token = Some(token_response.access_token);
                                 got_response_flag.notify_one();
                                 HttpResponse::Found()
                                     .insert_header(("Location", "https://account.ely.by/oauth2/code/success?appName=DVA SMP"))
@@ -102,7 +103,7 @@ fn main() {
                     http_server.await
                 })
                 .unwrap();
-            println!("meow {}", actix_app_data.access_token.as_ref().unwrap());
+            println!("meow {}", outer_app_data.access_token.lock().unwrap().as_ref().unwrap());
 
             ui_handle.upgrade_in_event_loop(|ui| {}).unwrap();
         }
