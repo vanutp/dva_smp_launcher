@@ -3,9 +3,9 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ElyByUserInfo {
-    uuid: String,
-    username: String,
-    profile_link: String,
+    pub uuid: String,
+    pub username: String,
+    pub profile_link: String,
 }
 
 pub async fn get_user_info(token: &str) -> anyhow::Result<ElyByUserInfo> {

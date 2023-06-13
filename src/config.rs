@@ -2,6 +2,7 @@ use std::fs;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
+use actix_web::web::Path;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +32,15 @@ fn get_config_path() -> PathBuf {
         create_dir_all(dirs.config_dir()).unwrap();
     }
     dirs.config_dir().join("config.json")
+}
+
+pub fn get_minecraft_dir() -> PathBuf {
+    let dirs = get_dirs();
+    let minecraft_dir = dirs.data_dir().join(".minecraft");
+    if !minecraft_dir.exists() {
+        create_dir_all(minecraft_dir.clone()).unwrap();
+    }
+    minecraft_dir
 }
 
 pub fn load() -> Config {

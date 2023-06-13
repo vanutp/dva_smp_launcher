@@ -1,0 +1,18 @@
+import { VerticalBox } from "std-widgets.slint";
+import { ProgressBar } from "progressbar.slint";
+
+export component PageStarting inherits VerticalBox {
+    in property<string> status;
+    in property<float> progress;
+
+    height: 100px;
+    width: 100%;
+
+    Text {
+        text: root.status;
+    }
+    ProgressBar {
+        width: 100%;
+        progress: root.progress;
+    }
+}
