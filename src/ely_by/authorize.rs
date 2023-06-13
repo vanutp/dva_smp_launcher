@@ -1,13 +1,13 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Mutex;
 
-use actix_web::{App, HttpResponse, HttpServer, web};
+use actix_web::{web, App, HttpResponse, HttpServer};
+use anyhow::bail;
 use clone_macro::clone;
 use serde::Deserialize;
-use tokio::sync::Notify;
-use tokio::task;
+use tokio::select;
+use tokio::sync::oneshot;
 
 const CLIENT_ID: &str = "dvasmp1";
 const CLIENT_SECRET: &str = "ICLLyGfzhLCyHhAiH5kmcL4QOt7N7RNrQbDkrUE1kB5GOu_EPo503iz3nsiZ34mq";
@@ -15,7 +15,7 @@ const LISTEN_PORT: u16 = 18741;
 const REDIRECT_URI: &str = "http://127.0.0.1:18741/callback";
 
 #[derive(Deserialize)]
-struct ElyByOauthCallbackData {
+struct OauthCallbackData {
     code: String,
 }
 
@@ -23,11 +23,6 @@ struct ElyByOauthCallbackData {
 struct ElyByOauthTokenResponse {
     access_token: String,
     token_type: String,
-}
-
-struct ActixAppState {
-    access_token: Mutex<Option<String>>,
-    is_error: Mutex<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,86 +36,87 @@ impl Display for ElyByAuthError {
 
 impl Error for ElyByAuthError {}
 
-pub fn authorize() -> Result<String, anyhow::Error> {
-    let url = format!("https://account.ely.by/oauth2/v1\
+pub async fn authorize() -> Result<String, anyhow::Error> {
+    let url = format!(
+        "https://account.ely.by/oauth2/v1\
             ?client_id={}\
             &redirect_uri={}\
             &response_type=code\
             &scope=account_info minecraft_server_session\
-            &prompt=select_account", CLIENT_ID, REDIRECT_URI);
+            &prompt=select_account",
+        CLIENT_ID, REDIRECT_URI
+    );
     webbrowser::open(url.as_str())?;
 
-    let app_data = web::Data::new(ActixAppState {
-        access_token: Mutex::new(None),
-        is_error: Mutex::new(false),
-    });
-    let outer_app_data = app_data.clone();
+    let (sender, receiver) = oneshot::channel();
 
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(async {
-            let got_response_flag = Arc::new(Notify::new());
-            let http_server = HttpServer::new(clone!([got_response_flag], move || {
-                App::new()
-                .app_data(app_data.clone())
-                .route(
-                    "/callback",
-                    web::get().to(clone!([got_response_flag], move |req: web::Query<ElyByOauthCallbackData>, data: web::Data<ActixAppState>| clone!([got_response_flag], async move {
-                        let return_error = || {
-                            let mut is_error = data.is_error.lock().unwrap();
-                            *is_error = true;
-                            HttpResponse::InternalServerError().body("аааааа ошибка стоп 000000 пришло время переустанавливать шиндовс")
-                        };
+    let sender = web::Data::new(Mutex::new(Some(sender)));
 
-                        let client = reqwest::Client::new();
-                        let token_response = client
-                            .post("https://account.ely.by/api/oauth2/v1/token")
-                            .form(&[
-                                ("client_id", CLIENT_ID),
-                                ("client_secret", CLIENT_SECRET),
-                                ("redirect_uri", REDIRECT_URI),
-                                ("grant_type", "authorization_code"),
-                                ("code", &req.code),
-                            ])
-                            .send()
-                            .await;
-                        if token_response.is_err() {
-                            return return_error();
-                        }
-                        let token_response = token_response.unwrap().json::<ElyByOauthTokenResponse>().await;
-                        if token_response.is_err() {
-                            return return_error();
-                        }
-                        let token_response = token_response.unwrap();
-                        assert_eq!(token_response.token_type, "Bearer");
-                        let mut access_token = data.access_token.lock().unwrap();
-                        *access_token = Some(token_response.access_token);
-                        got_response_flag.notify_one();
+    let http_server = HttpServer::new(clone!([sender], move || {
+        App::new().app_data(sender.clone()).route(
+            "/callback",
+            web::get().to(
+                move |req: web::Query<OauthCallbackData>,
+                      sender: web::Data<Mutex<Option<oneshot::Sender<_>>>>| async move {
+                    let result = request_token(&req.code).await;
+                    let is_success = result.is_ok();
+
+                    sender
+                        .lock()
+                        .expect("Failed to acquire result sender")
+                        .take()
+                        .map(|sender| sender.send(result));
+
+                    if is_success {
                         HttpResponse::Found()
-                            .insert_header(("Location", "https://account.ely.by/oauth2/code/success?appName=DVA SMP"))
+                            .insert_header((
+                                "Location",
+                                "https://account.ely.by/oauth2/code/success?appName=DVA SMP",
+                            ))
                             .finish()
-                    }))),
-                )
-            }))
-                .bind(("127.0.0.1", LISTEN_PORT))?
-                .run();
+                    } else {
+                        HttpResponse::InternalServerError().body(
+                            "аааааа ошибка стоп 000000 пришло время переустанавливать шиндовс",
+                        )
+                    }
+                },
+            ),
+        )
+    }))
+    .bind(("127.0.0.1", LISTEN_PORT))?
+    .run();
 
-            let server_handle = http_server.handle();
+    let server_handle = http_server.handle();
 
-            task::spawn(async move {
-                got_response_flag.notified().await;
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                server_handle.stop(false).await;
-            });
+    select! {
+        result = http_server => {
+            server_handle.stop(false).await;
+            result?;
 
-            http_server.await
-        })?;
-
-    if *outer_app_data.is_error.lock()? {
-        return Err(anyhow::Error::new(ElyByAuthError));
+            bail!("Server was stopped too early")
+        }
+        result = receiver => {
+            result?
+        }
     }
+}
 
-    let res = outer_app_data.access_token.lock()?.as_ref()?.to_string();
-    Ok(res)
+async fn request_token(code: &str) -> Result<String, anyhow::Error> {
+    let token_response: ElyByOauthTokenResponse = reqwest::Client::new()
+        .post("https://account.ely.by/api/oauth2/v1/token")
+        .form(&[
+            ("client_id", CLIENT_ID),
+            ("client_secret", CLIENT_SECRET),
+            ("redirect_uri", REDIRECT_URI),
+            ("grant_type", "authorization_code"),
+            ("code", code),
+        ])
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    assert_eq!(token_response.token_type, "Bearer");
+
+    Ok(token_response.access_token)
 }
