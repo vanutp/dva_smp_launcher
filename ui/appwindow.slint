@@ -2,16 +2,20 @@ import { VerticalBox } from "std-widgets.slint";
 import { ProgressBar } from "progressbar.slint";
 import { PageAuthWaiting } from "page_auth_waiting.slint";
 import { PageLoading } from "page_loading.slint";
+import { PageError } from "page_error.slint";
 
 export component AppWindow inherits Window {
-    in property<int> page: -1;
+    in property<int> page: 0;
+    in property<string> error: "";
+
     in-out property<float> counter: 0.0;
     callback request-increase-value();
 
     title: "DVA SMP Launcher";
 
     VerticalBox {
-        if page == -1 : PageLoading {}
-        if page == 0 : PageAuthWaiting {}
+        if page == 0 : PageLoading {}
+        if page == 1 : PageError { error: error; }
+        if page == 2 : PageAuthWaiting {}
     }
 }

@@ -1,8 +1,6 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::sync::Mutex;
 
-use actix_web::{web, App, HttpResponse, HttpServer};
+use actix_web::{App, HttpResponse, HttpServer, web};
 use anyhow::bail;
 use clone_macro::clone;
 use serde::Deserialize;
@@ -25,18 +23,7 @@ struct ElyByOauthTokenResponse {
     token_type: String,
 }
 
-#[derive(Debug, Clone)]
-struct ElyByAuthError;
-
-impl Display for ElyByAuthError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Authentication error")
-    }
-}
-
-impl Error for ElyByAuthError {}
-
-pub async fn authorize() -> Result<String, anyhow::Error> {
+pub async fn authorize() -> anyhow::Result<String> {
     let url = format!(
         "https://account.ely.by/oauth2/v1\
             ?client_id={}\
@@ -58,7 +45,7 @@ pub async fn authorize() -> Result<String, anyhow::Error> {
             web::get().to(
                 move |req: web::Query<OauthCallbackData>,
                       sender: web::Data<Mutex<Option<oneshot::Sender<_>>>>| async move {
-                    let result = request_token(&req.code).await;
+                    let result = exchange_code(&req.code).await;
                     let is_success = result.is_ok();
 
                     sender
@@ -83,25 +70,24 @@ pub async fn authorize() -> Result<String, anyhow::Error> {
             ),
         )
     }))
-    .bind(("127.0.0.1", LISTEN_PORT))?
-    .run();
+        .bind(("127.0.0.1", LISTEN_PORT))?
+        .run();
 
     let server_handle = http_server.handle();
 
     select! {
         result = http_server => {
-            server_handle.stop(false).await;
             result?;
-
-            bail!("Server was stopped too early")
+            bail!("Server stopped too early")
         }
         result = receiver => {
+            server_handle.stop(false).await;
             result?
         }
     }
 }
 
-async fn request_token(code: &str) -> Result<String, anyhow::Error> {
+async fn exchange_code(code: &str) -> anyhow::Result<String> {
     let token_response: ElyByOauthTokenResponse = reqwest::Client::new()
         .post("https://account.ely.by/api/oauth2/v1/token")
         .form(&[
