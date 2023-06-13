@@ -26,6 +26,10 @@ struct ElyByOauthTokenResponse {
     token_type: String,
 }
 
+struct ActixAppState {
+    access_token: Option<String>,
+}
+
 
 fn main() {
     let ui = AppWindow::new().unwrap();
@@ -41,7 +45,11 @@ fn main() {
             &scope=account_info minecraft_server_session\
             &prompt=select_account", CLIENT_ID, REDIRECT_URI);
             webbrowser::open(url.as_str()).unwrap();
-            let mut access_token = String::new();
+
+            let app_data = web::Data::new(ActixAppState {
+                access_token: None,
+            });
+            let actix_app_data = app_data.clone();
 
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -49,11 +57,12 @@ fn main() {
                 .unwrap()
                 .block_on(async {
                     let got_response_flag = Arc::new(Notify::new());
-
-                    let http_server = HttpServer::new(clone!([got_response_flag, mut access_token], move || {
-                        App::new().route(
+                    let http_server = HttpServer::new(clone!([got_response_flag], move || {
+                        App::new()
+                        .app_data(actix_app_data)
+                        .route(
                             "/callback",
-                            web::get().to(clone!([got_response_flag, mut access_token], move |req: web::Query<ElyByOauthCallbackData>| clone!([got_response_flag, mut access_token], async move {
+                            web::get().to(clone!([got_response_flag], move |req: web::Query<ElyByOauthCallbackData>, data: web::Data<ActixAppState>| clone!([got_response_flag], async move {
                                 let client = reqwest::Client::new();
                                 let token_response = client
                                     .post("https://account.ely.by/api/oauth2/v1/token")
@@ -70,10 +79,12 @@ fn main() {
                                     .json::<ElyByOauthTokenResponse>()
                                     .await
                                     .unwrap();
-                                access_token.clear();
-                                access_token.push_str(token_response.access_token.as_str());
+                                assert_eq!(token_response.token_type, "Bearer");
+                                data.access_token = Some(token_response.access_token);
                                 got_response_flag.notify_one();
-                                HttpResponse::Ok().body("meow")
+                                HttpResponse::Found()
+                                    .insert_header(("Location", "https://account.ely.by/oauth2/code/success?appName=DVA SMP"))
+                                    .finish()
                             }))),
                         )
                     }))
@@ -91,7 +102,7 @@ fn main() {
                     http_server.await
                 })
                 .unwrap();
-            println!("meow {}", access_token);
+            println!("meow {}", actix_app_data.access_token.as_ref().unwrap());
 
             ui_handle.upgrade_in_event_loop(|ui| {}).unwrap();
         }
