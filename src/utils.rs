@@ -1,11 +1,11 @@
 use std::fs::File;
 use std::io;
-use std::io::{BufReader, Read};
 use std::path::PathBuf;
-use sha2::{Sha256, Digest};
 
-pub fn sync_minecraft() {
-    
+use sha2::{Digest, Sha256};
+
+pub async fn sync_modpack() {
+
 }
 
 fn hash_file(path: PathBuf) -> String {
