@@ -7,24 +7,18 @@ use std::time::Duration;
 
 use clone_macro::clone;
 use serde::Deserialize;
-use sha1::{Digest, Sha1};
 use tokio::sync::Mutex;
 use walkdir::WalkDir;
 
 use crate::config;
-
-const SERVER_BASE: &str = "https://mc.vanutp.dev/";
-
+use crate::utils::consts::{ModpackInfo, SERVER_BASE};
+use crate::utils::hash_file::hash_file;
 
 #[derive(Deserialize, Debug)]
 struct ModpackIndex {
     main_class: String,
     include: Vec<String>,
     objects: HashMap<String, String>,
-}
-
-pub struct ModpackInfo {
-    main_class: String,
 }
 
 pub async fn sync_modpack<F>(progress_callback: F) -> anyhow::Result<ModpackInfo>
@@ -64,7 +58,7 @@ pub async fn sync_modpack<F>(progress_callback: F) -> anyhow::Result<ModpackInfo
         }
     }
 
-    for (object, hash) in &existing_objects {
+    for (object, _) in &existing_objects {
         if index_response.objects.get(object).is_none() {
             let rel_object_path = Path::new(object);
             let object_path = mc_dir.join(rel_object_path);
@@ -85,7 +79,7 @@ pub async fn sync_modpack<F>(progress_callback: F) -> anyhow::Result<ModpackInfo
     let total_files = to_download.lock().await.len() as i32;
     tasks.push(tokio::spawn(clone!([to_download], async move {
         loop {
-            let downloaded_files = (total_files - to_download.lock().await.len() as i32);
+            let downloaded_files = total_files - to_download.lock().await.len() as i32;
             progress_callback(
                 format!("Загрузка файлов сборки... ({}/{})", downloaded_files, total_files).as_str(),
                 downloaded_files as f32 / total_files as f32
@@ -128,14 +122,4 @@ pub async fn sync_modpack<F>(progress_callback: F) -> anyhow::Result<ModpackInfo
     Ok(ModpackInfo {
         main_class: index_response.main_class,
     })
-}
-
-fn hash_file(path: &Path) -> String {
-    let mut file = File::open(path).unwrap();
-    let mut hasher = Sha1::new();
-    io::copy(&mut file, &mut hasher).unwrap();
-    let hash = hasher.finalize();
-    let mut buf = [0u8; 40];
-    let hash = base16ct::lower::encode_str(&hash, &mut buf).unwrap();
-    hash.to_string()
 }

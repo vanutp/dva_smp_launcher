@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct Config {
     pub token: Option<String>,
+    pub java_path: Option<String>,
     pub xmx: i32,
 }
 
@@ -16,6 +17,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             token: None,
+            java_path: None,
             xmx: 3072,
         }
     }

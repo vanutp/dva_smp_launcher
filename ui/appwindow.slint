@@ -12,6 +12,8 @@ export component AppWindow inherits Window {
     in property<string> username;
     in-out property<string> memory;
     callback memory-changed;
+    in-out property<string> java-path;
+    callback java-path-changed;
     callback start;
 
     in property<string> starting-status;
@@ -29,6 +31,11 @@ export component AppWindow inherits Window {
             memory-changed => {
                 root.memory = config.memory;
                 root.memory-changed()
+            }
+            java-path: root.java-path;
+            java-path-changed => {
+                root.java-path = config.java-path;
+                root.java-path-changed()
             }
             start => {
                 root.start()
