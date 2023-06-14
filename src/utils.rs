@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, File, remove_file};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ pub async fn sync_modpack<F>(progress_callback: F) -> anyhow::Result<ModpackInfo
 {
     progress_callback("Проверка файлов сборки...", 0.1);
     let index_response = reqwest::Client::new()
-        .get(format!("{}/index.json", SERVER_BASE))
+        .get(format!("{}index.json", SERVER_BASE))
         .send()
         .await?
         .error_for_status()?
