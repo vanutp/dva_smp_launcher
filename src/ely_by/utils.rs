@@ -14,6 +14,7 @@ pub async fn get_user_info(token: &str) -> anyhow::Result<ElyByUserInfo> {
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await?
+        .error_for_status()?
         .json::<ElyByUserInfo>()
         .await?;
     Ok(user_info)

@@ -1,10 +1,10 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
 use clone_macro::clone;
 use tokio::runtime;
 use tokio::sync::Notify;
+use crate::utils::sync_modpack;
 
 mod ely_by;
 mod config;
@@ -41,14 +41,6 @@ fn main() {
                 ui_handle.upgrade_in_event_loop(move |ui| {
                     ui.set_error(error.into());
                     ui.set_page(UiPage::Error as i32);
-                }).unwrap();
-            };
-            let set_progress = |status: &str, progress: f32| {
-                let status = status.to_string();
-                ui_handle.upgrade_in_event_loop(move |ui| {
-                    ui.set_starting_status(status.into());
-                    ui.set_starting_progress(progress);
-                    ui.set_page(UiPage::Starting as i32);
                 }).unwrap();
             };
 
@@ -112,7 +104,14 @@ fn main() {
             notify.notified().await;
 
             let config = config::load();
-            set_progress("Проверка и загрузка файлов сборки...", 0.5);
+            sync_modpack(move |status: &str, progress: f32| {
+                let status = status.to_string();
+                ui_handle.upgrade_in_event_loop(move |ui| {
+                    ui.set_starting_status(status.into());
+                    ui.set_starting_progress(progress);
+                    ui.set_page(UiPage::Starting as i32);
+                }).unwrap();
+            }).await.unwrap();
         })
     });
 

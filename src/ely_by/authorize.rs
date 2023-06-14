@@ -99,6 +99,7 @@ async fn exchange_code(code: &str) -> anyhow::Result<String> {
         ])
         .send()
         .await?
+        .error_for_status()?
         .json()
         .await?;
 

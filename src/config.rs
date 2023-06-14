@@ -2,7 +2,6 @@ use std::fs;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
-use actix_web::web::Path;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 

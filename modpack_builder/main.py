@@ -187,14 +187,15 @@ def create_index() -> None:
     print('Creating index file...')
     hashes = {str(k): v for k, v in hash_dir(target_dir).items()}
     index = {
-        'hash_objects': [
+        'main_class': version_data['mainClass'],
+        'include': [
             'assets',
             'libraries',
             'mods',
             'client.jar',
             *cfg_copy_extra,
         ],
-        'hashes': hashes,
+        'objects': hashes,
     }
     with open(target_dir / 'index.json', 'w') as f:
         json.dump(index, f)
