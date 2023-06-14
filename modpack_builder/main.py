@@ -28,13 +28,18 @@ async def download_file(client: httpx.AsyncClient, url: str, path: Path) -> None
         f.write(resp.read())
 
 
-def hash_dir(directory: Path) -> dict[Path, str]:
+def hash_dir(directory: Path, exclude: list[Path] = None) -> dict[Path, str]:
+    if exclude is None:
+        exclude = []
     res = {}
     for path in directory.rglob('*'):
         if path.is_dir():
             continue
+        relpath = path.relative_to(directory)
+        if relpath in exclude:
+            continue
         with open(path, 'rb') as f:
-            res[path.relative_to(directory)] = sha1(f.read()).hexdigest()
+            res[relpath] = sha1(f.read()).hexdigest()
     return res
 
 
@@ -185,7 +190,7 @@ def copy_extra():
 
 def create_index() -> None:
     print('Creating index file...')
-    hashes = {str(k): v for k, v in hash_dir(target_dir).items()}
+    hashes = {str(k): v for k, v in hash_dir(target_dir, exclude=[Path('index.json')]).items()}
     index = {
         'main_class': version_data['mainClass'],
         'include': [
