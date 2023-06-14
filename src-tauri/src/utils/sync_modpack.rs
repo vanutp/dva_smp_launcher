@@ -72,7 +72,6 @@ pub async fn sync_modpack<F>(progress_callback: F) -> anyhow::Result<ModpackInfo
             to_download.insert(object.clone());
         }
     }
-    println!("{:?}", to_download);
 
     let to_download = Arc::new(Mutex::new(to_download));
     let mut tasks = Vec::new();

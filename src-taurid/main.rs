@@ -1,9 +1,12 @@
-use std::sync::Arc;
-use std::thread;
-
-use clone_macro::clone;
+// use std::sync::Arc;
+// use std::thread;
+//
+// use clone_macro::clone;
+use dioxus::prelude::*;
+use dioxus_desktop::WindowBuilder;
 use tokio::runtime;
 use tokio::sync::Notify;
+
 use crate::utils::sync_modpack;
 
 mod ely_by;
@@ -15,12 +18,11 @@ slint::include_modules!();
 enum UiPage {
     Loading,
     Error,
-    AuthWaiting,
     Config,
-    Starting,
 }
 
 fn main() {
+
     let ui = AppWindow::new().unwrap();
 
     thread::spawn({
