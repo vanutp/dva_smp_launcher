@@ -69,8 +69,8 @@ def find_java_in_registry(
         return []
 
     subkeys = []
+    i = 0
     while True:
-        i = 0
         try:
             subkeys.append(EnumKey(key, i))
             i += 1
@@ -134,7 +134,9 @@ def find_java_win() -> list[JavaInstall]:
     return res
 
 
-def find_java_in_dir(dir_: str, *, suffix: str = '', startswith: str = '') -> list[JavaInstall]:
+def find_java_in_dir(
+    dir_: str, *, suffix: str = '', startswith: str = ''
+) -> list[JavaInstall]:
     suffix = Path(suffix)
     res = []
     for subdir in Path(dir_).glob('*'):
@@ -159,8 +161,14 @@ def find_java_linux() -> list[JavaInstall]:
 
 def find_java_macos() -> list[JavaInstall]:
     res = []
-    res.extend(find_java_in_dir('/Library/Java/JavaVirtualMachines', suffix='Contents/Home'))
-    res.extend(find_java_in_dir('/System/Library/Java/JavaVirtualMachines', suffix='Contents/Home'))
+    res.extend(
+        find_java_in_dir('/Library/Java/JavaVirtualMachines', suffix='Contents/Home')
+    )
+    res.extend(
+        find_java_in_dir(
+            '/System/Library/Java/JavaVirtualMachines', suffix='Contents/Home'
+        )
+    )
     res.extend(find_java_in_dir('/usr/local/opt', startswith='openjdk'))
     res.extend(find_java_in_dir('/opt/homebrew/opt', startswith='openjdk'))
     return res
@@ -183,9 +191,8 @@ def find_java() -> str:
     print(*res, sep='\n')
     res = [x for x in res if x.version == '17' or x.version.startswith('17.')]
     if not res:
-        print(
-            'Jaba не найдена, установите ее с https://adoptium.net/ и перезапустите лаунчер'
-        )
+        print('Jaba 17 (нужна прям 17) не найдена')
+        print('Установите ее с https://adoptium.net/ и перезапустите лаунчер')
         print('Если jaba на самом деле установлена, введите путь к ней ниже')
         return ''
 
