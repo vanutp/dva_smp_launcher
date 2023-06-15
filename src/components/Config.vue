@@ -34,7 +34,7 @@ function memoryChanged(event: Event) {
     <label>Путь к jabe</label>
     <input
       :value="props.javaPath"
-      @input="emit('update:javaPath', $event.target.value)"
+      @input="emit('update:javaPath', ($event.target as any).value)"
     >
     <button @click="emit('start')">
       Поехали!

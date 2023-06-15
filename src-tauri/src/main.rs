@@ -1,5 +1,5 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -52,7 +52,7 @@ fn main() {
             let app_handle = app.handle();
             tauri::async_runtime::spawn(async move {
                 sleep(Duration::from_secs(1)).await;
-                t
+
                 let app = app_handle.app_handle();
                 let app2 = app_handle.app_handle();
                 let set_progress = move |message: &str, progress: Option<f32>| {

@@ -34,3 +34,11 @@ webbrowser = "0.8.10"
 # this feature is used for production builds or when `devPath` points to the filesystem
 # DO NOT REMOVE!!
 custom-protocol = ["tauri/custom-protocol"]
+
+#[target.x86_64-pc-windows-msvc]
+#linker = "lld"
+#rustflags = [
+#    "-Lnative=/home/fox/.xwin/crt/lib/x86_64",
+#    "-Lnative=/home/fox/.xwin/sdk/lib/um/x86_64",
+#    "-Lnative=/home/fox/.xwin/sdk/lib/ucrt/x86_64"
+#]
