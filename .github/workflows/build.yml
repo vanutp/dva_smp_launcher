@@ -1,0 +1,29 @@
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
+    env:
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+      SERVER_BASE: ${{ vars.SERVER_BASE }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+      - run: pip install poetry==1.5.1 pyinstaller==5.12.0
+      - run: mkdir .venv
+      - run: poetry install --no-root
+      - run: python write_build_cfg.py
+      - run: poetry run pyinstaller --onefile --name dva_smp_launcher launch.py
+      - uses: actions/upload-artifact@v2
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/*
