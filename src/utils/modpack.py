@@ -46,20 +46,22 @@ async def sync_modpack() -> ModpackInfo:
     for rel_include_path in index.include:
         include_path = mc_dir / rel_include_path
         if include_path.is_file():
-            to_hash.append((str(rel_include_path), include_path))
+            norm_rel_include_path = str(rel_include_path).replace('\\', '/')
+            to_hash.append((norm_rel_include_path, include_path))
         elif include_path.is_dir():
             for obj_path in include_path.rglob('*'):
                 if obj_path.is_dir():
                     continue
                 rel_obj_path = obj_path.relative_to(mc_dir)
-                to_hash.append((str(rel_obj_path), obj_path))
+                norm_rel_obj_path = str(rel_obj_path).replace('\\', '/')
+                to_hash.append((norm_rel_obj_path, obj_path))
     existing_objects = {}
     for obj, obj_path in tqdm(to_hash):
         existing_objects[obj] = hash_file(obj_path)
 
     for obj in existing_objects.keys():
         if obj not in index.objects:
-            Path(obj).unlink()
+            (mc_dir / obj).unlink()
 
     to_download = set()
     for obj, obj_hash in index.objects.items():
