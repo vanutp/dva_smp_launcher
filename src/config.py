@@ -14,7 +14,7 @@ class Config:
 
 
 def get_dirs():
-    return PlatformDirs('dvasmp', appauthor=False, ensure_exists=True)
+    return PlatformDirs('dvasmp', appauthor=False, ensure_exists=True, roaming=True)
 
 
 def get_config_path():
