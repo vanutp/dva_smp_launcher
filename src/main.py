@@ -32,12 +32,15 @@ async def main_menu(user_info: ElyByUser, config: Config):
                 ('Играть', 'start'),
                 (f'Путь к jabe ({config.java_path or "Не задан"})', 'java_path'),
                 (f'Выделенная память ({config.xmx} МиБ)', 'xmx'),
+                (
+                    f'Путь к ассетам ({config.assets_dir or "По умолчанию"})',
+                    'assets_dir',
+                ),
                 ('Выход', 'exit'),
             ],
         )
         if answer == 'java_path':
             config.java_path = ask_user_java(config.java_path).path
-            save_config(config)
         elif answer == 'xmx':
             config.xmx = int(
                 ask(
@@ -46,13 +49,19 @@ async def main_menu(user_info: ElyByUser, config: Config):
                     default=str(config.xmx),
                 )
             )
+        elif answer == 'assets_dir':
+            config.assets_dir = ask(
+                'Путь к ассетам',
+                default=str(config.assets_dir),
+            )
         elif answer in ['start', 'exit']:
             break
+        save_config(config)
     if answer == 'exit':
         return
     elif answer == 'start':
         clear()
-        modpack_index = await sync_modpack()
+        modpack_index = await sync_modpack(config)
         await launch(modpack_index, user_info, config)
 
 

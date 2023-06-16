@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 version_data_path = '/home/fox/.minecraft/versions/quilt-loader-0.19.1-1.19.2/quilt-loader-0.19.1-1.19.2.json'
 instance_dir = '/home/fox/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/Acamca Explorer Edition/.minecraft'
-cfg_copy_extra = ['config/yosbr', 'authlib-injector.jar', 'resourcepacks/AquaHUD.zip']
+cfg_copy_extra = ['config/yosbr', 'authlib-injector.jar', 'resourcepacks/AquaHUD.zip', 'servers.dat']
 modpack_name = 'Acamca_Explorer_Edition'
 
 target_dir = Path('modpacks') / modpack_name
@@ -197,7 +197,6 @@ def create_index() -> None:
         'asset_index': version_data['assetIndex']['id'],
         'main_class': version_data['mainClass'],
         'include': [
-            'assets',
             'libraries',
             'mods',
             'client.jar',

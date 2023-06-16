@@ -8,7 +8,7 @@ from src.compat import iswin
 from src.config import Config, get_minecraft_dir
 from src.ely_by.utils import ElyByUser
 from src.errors import LauncherError
-from src.utils.modpack import ModpackIndex
+from src.utils.modpack import ModpackIndex, get_assets_dir
 
 AUTHLIB_INJECTOR_FILENAME = 'authlib-injector.jar'
 CLIENT_FILENAME = 'client.jar'
@@ -53,7 +53,7 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
         '--gameDir',
         str(mc_dir),
         '--assetsDir',
-        str(mc_dir / 'assets'),
+        str(get_assets_dir(config)),
         '--assetIndex',
         modpack_index.asset_index,
         '--uuid',

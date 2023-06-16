@@ -7,7 +7,7 @@ import httpx
 from rich.progress import track, Progress
 
 from build_cfg import SERVER_BASE
-from src.config import get_minecraft_dir
+from src.config import get_minecraft_dir, Config
 
 
 def hash_file(path: Path) -> str:
@@ -31,34 +31,51 @@ class ModpackIndex:
     objects: dict[str, str]
 
 
-async def sync_modpack() -> ModpackIndex:
+def get_assets_dir(config: Config):
+    return Path(config.assets_dir or (get_minecraft_dir() / 'assets'))
+
+
+async def sync_modpack(config: Config) -> ModpackIndex:
+    mc_dir = get_minecraft_dir()
+    assets_dir = get_assets_dir(config)
+
     print('Проверка файлов сборки...', end='')
     index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}index.json')
     index_resp.raise_for_status()
     index = ModpackIndex(**index_resp.json())
     index.include = [Path(x) for x in index.include]
-    mc_dir = get_minecraft_dir()
 
-    to_hash = []
+    # [(is_asset, relative_path)]
+    to_hash: list[tuple[bool, str]] = []
     for rel_include_path in index.include:
         include_path = mc_dir / rel_include_path
         if include_path.is_file():
-            norm_rel_include_path = str(rel_include_path).replace('\\', '/')
-            to_hash.append((norm_rel_include_path, include_path))
+            to_hash.append((False, str(rel_include_path)))
         elif include_path.is_dir():
             for obj_path in include_path.rglob('*'):
                 if obj_path.is_dir():
                     continue
                 rel_obj_path = obj_path.relative_to(mc_dir)
                 norm_rel_obj_path = str(rel_obj_path).replace('\\', '/')
-                to_hash.append((norm_rel_obj_path, obj_path))
-    existing_objects = {}
+                to_hash.append((False, norm_rel_obj_path))
+    for obj_path in assets_dir.rglob('*'):
+        if obj_path.is_dir():
+            continue
+        rel_obj_path = obj_path.relative_to(assets_dir)
+        norm_rel_obj_path = str(rel_obj_path).replace('\\', '/')
+        to_hash.append((True, norm_rel_obj_path))
 
+    existing_objects = {}
     print('\r', end='')
-    for obj, obj_path in track(to_hash, 'Проверка файлов сборки...'):
-        existing_objects[obj] = hash_file(obj_path)
+    for is_asset, obj in track(to_hash, 'Проверка файлов сборки...'):
+        if is_asset:
+            existing_objects['assets/' + obj] = hash_file(assets_dir / obj)
+        else:
+            existing_objects[obj] = hash_file(mc_dir / obj)
 
     for obj in existing_objects.keys():
+        if obj.startswith('assets/'):
+            continue
         if obj not in index.objects:
             (mc_dir / obj).unlink()
 
@@ -72,7 +89,11 @@ async def sync_modpack() -> ModpackIndex:
         while to_download:
             obj = to_download.pop()
             url = SERVER_BASE + obj
-            await download_file(client, url, mc_dir / obj)
+            if obj.startswith('assets/'):
+                target_file = assets_dir / obj.removeprefix('assets/')
+            else:
+                target_file = mc_dir / obj
+            await download_file(client, url, target_file)
 
     async def report_progress(total: int):
         with Progress() as progress:
@@ -92,4 +113,4 @@ async def sync_modpack() -> ModpackIndex:
     return index
 
 
-__all__ = ['sync_modpack', 'ModpackIndex']
+__all__ = ['get_assets_dir', 'sync_modpack', 'ModpackIndex']

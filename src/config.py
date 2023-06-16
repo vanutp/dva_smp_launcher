@@ -10,6 +10,7 @@ from platformdirs import PlatformDirs
 class Config:
     token: str = ''
     java_path: str = ''
+    assets_dir: str = ''
     xmx: int = 3072
 
 
@@ -42,6 +43,7 @@ def load_config() -> Config:
     if not (
         isinstance(res.token, str)
         and isinstance(res.java_path, str)
+        and isinstance(res.assets_dir, str)
         and isinstance(res.xmx, int)
     ):
         return Config()
