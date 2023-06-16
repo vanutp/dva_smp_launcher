@@ -7,9 +7,9 @@ from pathlib import Path
 import httpx
 from tqdm import tqdm
 
-version_data_path = '/home/fox/.minecraft/versions/quilt-loader-0.19.0-1.19.2/quilt-loader-0.19.0-1.19.2.json'
+version_data_path = '/home/fox/.minecraft/versions/quilt-loader-0.19.1-1.19.2/quilt-loader-0.19.1-1.19.2.json'
 instance_dir = '/home/fox/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/Acamca Explorer Edition/.minecraft'
-cfg_copy_extra = ['config/yosbr', 'authlib-injector.jar']
+cfg_copy_extra = ['config/yosbr', 'authlib-injector.jar', 'resourcepacks/AquaHUD.zip']
 modpack_name = 'Acamca_Explorer_Edition'
 
 target_dir = Path('modpacks') / modpack_name
@@ -176,6 +176,7 @@ def copy_extra():
     for obj in cfg_copy_extra:
         source_path = Path(instance_dir) / obj
         target_path = target_dir / obj
+        target_path.parent.mkdir(parents=True, exist_ok=True)
         if target_path.is_dir():
             shutil.rmtree(target_path)
         elif target_path.is_file():
