@@ -9,9 +9,12 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-import sys
+import inquirer.errors
 
-if sys.platform == 'win32':
+from src.compat import ismac, islinux, iswin
+from src.tui import ask
+
+if iswin():
     from winreg import (
         OpenKeyEx,
         HKEY_LOCAL_MACHINE,
@@ -39,6 +42,7 @@ def check_java(path: JavaInstall | str | Path) -> JavaInstall | None:
         path = path.path
     elif isinstance(path, Path):
         path = str(path)
+    path = shutil.which(path)
     if not os.path.isfile(path):
         return None
     try:
@@ -57,15 +61,18 @@ def check_java(path: JavaInstall | str | Path) -> JavaInstall | None:
     )
 
 
+def is_good_version(java: JavaInstall) -> bool:
+    return java.version == '17' or java.version.startswith('17.')
+
+
 def find_java_in_registry(
     key_name: str, subkey_suffix: str, java_dir_key: str
-) -> list[JavaInstall]:
+) -> list[JavaInstall | None]:
     try:
         key = OpenKeyEx(
             HKEY_LOCAL_MACHINE, key_name, access=KEY_READ | KEY_ENUMERATE_SUB_KEYS
         )
     except OSError:
-        print(f'Key "{key_name}" not found')
         return []
 
     subkeys = []
@@ -136,7 +143,7 @@ def find_java_win() -> list[JavaInstall]:
 
 def find_java_in_dir(
     dir_: str, *, suffix: str = '', startswith: str = ''
-) -> list[JavaInstall]:
+) -> list[JavaInstall | None]:
     suffix = Path(suffix)
     res = []
     for subdir in Path(dir_).glob('*'):
@@ -145,11 +152,10 @@ def find_java_in_dir(
         if startswith and not subdir.name.startswith(startswith):
             continue
         res.append(check_java(subdir / suffix / 'bin' / 'java'))
-    res = [x for x in res if x]
     return res
 
 
-def find_java_linux() -> list[JavaInstall]:
+def find_java_linux() -> list[JavaInstall | None]:
     res = []
     res.extend(find_java_in_dir('/usr/java'))
     res.extend(find_java_in_dir('/usr/lib/jvm'))
@@ -159,7 +165,7 @@ def find_java_linux() -> list[JavaInstall]:
     return res
 
 
-def find_java_macos() -> list[JavaInstall]:
+def find_java_macos() -> list[JavaInstall | None]:
     res = []
     res.extend(
         find_java_in_dir('/Library/Java/JavaVirtualMachines', suffix='Contents/Home')
@@ -174,29 +180,46 @@ def find_java_macos() -> list[JavaInstall]:
     return res
 
 
+def validate_user_java(path: str):
+    java = check_java(path)
+    if not java:
+        raise inquirer.errors.ValidationError(
+            path, reason='Jaba не найдена по этому пути'
+        )
+    if not is_good_version(java):
+        raise inquirer.errors.ValidationError(
+            path, reason='Неправильная версия jabi, нужна 17'
+        )
+    return True
+
+
+def ask_user_java(default: str = None) -> JavaInstall:
+    user_java = ask('Путь к jabe', validate=validate_user_java, default=default)
+    return check_java(user_java)
+
+
 def find_java() -> str:
-    if sys.platform == 'win32':
+    if iswin():
         res = find_java_win()
-    elif sys.platform == 'linux':
+    elif islinux():
         res = find_java_linux()
-    elif sys.platform == 'darwin':
+    elif ismac():
         res = find_java_macos()
     else:
         raise ValueError('Unsupported platform')
 
-    default_java_path = shutil.which('javaw' if sys.platform == 'win32' else 'java')
+    default_java_path = 'javaw' if iswin() else 'java'
     if default_java_path and (default_java := check_java(default_java_path)):
         res.append(default_java)
 
-    print(*res, sep='\n')
-    res = [x for x in res if x.version == '17' or x.version.startswith('17.')]
+    res = [x for x in res if x and is_good_version(x)]
     if not res:
         print('Jaba 17 (нужна прям 17) не найдена')
         print('Установите ее с https://adoptium.net/ и перезапустите лаунчер')
-        print('Если jaba на самом деле установлена, введите путь к ней ниже')
-        return ''
+        print('Если jaba на самом деле установлена, введите путь к ней')
+        return ask_user_java().path
 
     return res[0].path
 
 
-__all__ = ['find_java', 'check_java']
+__all__ = ['find_java', 'check_java', 'ask_user_java']

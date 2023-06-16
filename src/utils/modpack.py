@@ -4,7 +4,7 @@ from hashlib import sha1
 from pathlib import Path
 
 import httpx
-from tqdm import tqdm
+from rich.progress import track, Progress
 
 from build_cfg import SERVER_BASE
 from src.config import get_minecraft_dir
@@ -24,18 +24,15 @@ async def download_file(client: httpx.AsyncClient, url: str, path: Path) -> None
 
 @dataclass
 class ModpackIndex:
+    version: str
+    asset_index: str
     main_class: str
     include: list[str]
     objects: dict[str, str]
 
 
-@dataclass
-class ModpackInfo:
-    main_class: str
-
-
-async def sync_modpack() -> ModpackInfo:
-    print('Проверка файлов сборки...')
+async def sync_modpack() -> ModpackIndex:
+    print('Проверка файлов сборки...', end='')
     index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}index.json')
     index_resp.raise_for_status()
     index = ModpackIndex(**index_resp.json())
@@ -56,7 +53,9 @@ async def sync_modpack() -> ModpackInfo:
                 norm_rel_obj_path = str(rel_obj_path).replace('\\', '/')
                 to_hash.append((norm_rel_obj_path, obj_path))
     existing_objects = {}
-    for obj, obj_path in tqdm(to_hash):
+
+    print('\r', end='')
+    for obj, obj_path in track(to_hash, 'Проверка файлов сборки...'):
         existing_objects[obj] = hash_file(obj_path)
 
     for obj in existing_objects.keys():
@@ -76,22 +75,21 @@ async def sync_modpack() -> ModpackInfo:
             await download_file(client, url, mc_dir / obj)
 
     async def report_progress(total: int):
-        t = tqdm(total=total)
-        while to_download:
-            current = total - len(to_download)
-            t.update(current - t.n)
-            await asyncio.sleep(0.5)
-        t.update(total - t.n)
-        t.close()
+        with Progress() as progress:
+            t = progress.add_task('Загрузка файлов...', total=total)
+            while to_download:
+                current = total - len(to_download)
+                progress.update(t, completed=current)
+                await asyncio.sleep(0.5)
+            progress.update(t, completed=total)
 
     if to_download:
-        print('Загрузка файлов...')
         tasks = [report_progress(len(to_download))]
         for _ in range(8):
             tasks.append(download_coro())
         await asyncio.gather(*tasks)
 
-    return ModpackInfo(main_class=index.main_class)
+    return index
 
 
-__all__ = ['sync_modpack', 'ModpackInfo']
+__all__ = ['sync_modpack', 'ModpackIndex']
