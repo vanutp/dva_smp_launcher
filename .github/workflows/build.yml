@@ -37,7 +37,7 @@ jobs:
       - if: ${{ github.ref }} == master
         env:
           TARGET_FILENAME: ${{ fromJSON('{"windows-latest":"dva_smp_launcher.exe","ubuntu-latest":"dva_smp_launcher_linux","macos-latest":"dva_smp_launcher_macos"}')[matrix.os] }}
-        run: scp dist/* $SERVER_ADDR:$SERVER_PATH/
+        run: scp dist/* $SERVER_ADDR:$SERVER_PATH/$TARGET_FILENAME
       - uses: actions/upload-artifact@v2
         with:
           name: dist-${{ matrix.os }}
