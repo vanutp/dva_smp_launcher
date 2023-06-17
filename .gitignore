@@ -5,3 +5,4 @@ dist/
 build/
 /build_cfg.py
 *.spec
+**/__pycache__/
