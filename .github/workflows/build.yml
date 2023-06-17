@@ -17,7 +17,7 @@ jobs:
       CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
       SERVER_BASE: ${{ vars.SERVER_BASE }}
       SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
-      SERVER_PATH: ${{ secrets.SERVER_PATH }}
+      SERVER_PATH: ${{ vars.SERVER_PATH }}
 
     steps:
       - uses: actions/checkout@v2
