@@ -1,6 +1,10 @@
 on:
   push:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
