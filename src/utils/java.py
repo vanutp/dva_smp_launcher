@@ -43,7 +43,7 @@ def check_java(path: JavaInstall | str | Path) -> JavaInstall | None:
     elif isinstance(path, Path):
         path = str(path)
     path = shutil.which(path)
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         return None
     try:
         version_result = subprocess.check_output(
