@@ -1,0 +1,58 @@
+id: dev.vanutp.DvaSmp
+
+runtime: org.freedesktop.Platform
+runtime-version: '22.08'
+
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+- org.freedesktop.Sdk.Extension.openjdk17
+
+command: dvasmp
+
+finish-args:
+- --socket=x11
+- --socket=pulseaudio
+- --device=dri
+- --share=ipc
+- --share=network
+
+modules:
+
+- python3-requirements.json
+
+- name: openjdk
+  buildsystem: simple
+  build-commands:
+  - /usr/lib/sdk/openjdk17/install.sh
+
+- name: dvasmp
+  buildsystem: simple
+  secret-env:
+  - CLIENT_ID
+  - CLIENT_SECRET
+  - SERVER_BASE
+  sources:
+  - type: git
+    url: https://git.vanutp.dev/vanutp/dva_smp_launcher
+    commit: 58214f05b4bbf109de7e04966d16458d653e6c77
+  build-commands:
+  - python write_build_cfg.py
+  - mkdir -p /app/share/dvasmp
+  - cp -r assets modpack_builder src launch.py build_cfg.py /app/share/dvasmp
+
+- name: dvasmp-metadata
+  buildsystem: simple
+  sources:
+  - type: file
+    path: ./dvasmp.sh
+  - type: file
+    path: dvasmp.desktop
+  - type: file
+    path: dvasmp.png
+  - type: file
+    path: dvasmp-symbolic.svg
+  build-commands:
+  - install -Dm 755 dvasmp.sh /app/bin/dvasmp
+  - install -D dvasmp.png /app/share/icons/hicolor/512x512/apps/dev.vanutp.DvaSmp.png
+  - install -D dvasmp-symbolic.svg /app/share/icons/hicolor/symbolic/apps/dev.vanutp.DvaSmp-symbolic.svg
+  - install -D dvasmp.desktop /app/share/applications/dev.vanutp.DvaSmp.desktop
