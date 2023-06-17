@@ -24,11 +24,11 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: 3.11
-      - run: pip install poetry==1.5.1 pyinstaller==5.12.0
+      - run: pip install poetry==1.5.1
       - run: mkdir .venv
       - run: poetry install --no-root
       - run: python write_build_cfg.py
-      - run: poetry run pyinstaller --onefile --name dva_smp_launcher launch.py
+      - run: poetry run pyinstaller --onefile --name dva_smp_launcher --exclude-module PIL --icon assets/dva_smp_launcher.png launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@685d0f20da72e4b53cc81d373a2ed0a867770e46
         with:
