@@ -60,7 +60,7 @@ async def update_if_required():
     new_file_name.rename(current_file)
     chmod_x(current_file)
 
-    os.execl(sys.executable, 'updated', renamed_current_file)
+    os.execl(sys.executable, sys.executable, 'updated', renamed_current_file)
 
 
 __all__ = ['update_if_required']
