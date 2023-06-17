@@ -39,7 +39,7 @@ async def sync_modpack(config: Config) -> ModpackIndex:
     mc_dir = get_minecraft_dir()
     assets_dir = get_assets_dir(config)
 
-    print('Проверка файлов сборки...', end='')
+    print('Проверка файлов сборки...', end='', flush=True)
     index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}index.json')
     index_resp.raise_for_status()
     index = ModpackIndex(**index_resp.json())
