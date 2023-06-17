@@ -1,3 +1,5 @@
+import os
+
 import sys
 
 
@@ -13,4 +15,14 @@ def ismac():
     return sys.platform == 'darwin'
 
 
-__all__ = ['iswin', 'islinux', 'ismac']
+def is_frozen():
+    return getattr(sys, 'frozen', False)
+
+
+def chmod_x(path):
+    if islinux():
+        path = str(path)
+        os.chmod(path, os.stat(path).st_mode | 0o111)
+
+
+__all__ = ['iswin', 'islinux', 'ismac', 'is_frozen', 'chmod_x']

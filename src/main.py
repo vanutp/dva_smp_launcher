@@ -12,6 +12,7 @@ from src.ely_by.utils import get_user, ElyByUser
 from src.errors import LauncherError
 from src.launcher import launch
 from src.tui import ensure_tty, ask, clear
+from src.update import update_if_required
 from src.utils.java import find_java, ask_user_java
 from src.utils.modpack import sync_modpack
 
@@ -66,6 +67,7 @@ async def main_menu(user_info: ElyByUser, config: Config):
 
 
 async def _main():
+    await update_if_required()
     ensure_tty()
     config = load_config()
     if not config.token:
