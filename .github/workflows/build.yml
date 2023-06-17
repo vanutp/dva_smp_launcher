@@ -37,10 +37,10 @@ jobs:
       - if: ${{ github.ref }} == master
         env:
           TARGET_FILENAME: ${{ fromJSON('{"windows-latest":"dva_smp_launcher.exe","ubuntu-latest":"dva_smp_launcher_linux","macos-latest":"dva_smp_launcher_macos"}')[matrix.os] }}
+          SHA1SUM: ${{ fromJSON('{"windows-latest":"sha1sum","ubuntu-latest":"sha1sum","macos-latest":"shasum"}')[matrix.os] }}
         run: |
-          command -v shasum && alias sha1sum=shasum
           mv dist/* dist/$TARGET_FILENAME
-          sha1sum dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
+          $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
         run: scp dist/* $SERVER_ADDR:$SERVER_PATH/
       - uses: actions/upload-artifact@v2
