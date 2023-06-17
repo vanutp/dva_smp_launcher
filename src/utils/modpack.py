@@ -8,6 +8,7 @@ from rich.progress import track, Progress
 
 from build_cfg import SERVER_BASE
 from src.config import get_minecraft_dir, Config
+from src.errors import LauncherError
 
 
 def hash_file(path: Path) -> str:
@@ -93,7 +94,17 @@ async def sync_modpack(config: Config) -> ModpackIndex:
                 target_file = assets_dir / obj.removeprefix('assets/')
             else:
                 target_file = mc_dir / obj
-            await download_file(client, url, target_file)
+            retries_left = 3
+            while True:
+                try:
+                    await download_file(client, url, target_file)
+                    break
+                except httpx.TimeoutException:
+                    retries_left -= 1
+                    if retries_left == 0:
+                        raise LauncherError(
+                            'Не удалось загрузить модпак (TimeoutException)'
+                        )
 
     async def report_progress(total: int):
         with Progress() as progress:
