@@ -4,7 +4,7 @@ from subprocess import Popen
 
 from rich import print
 
-from src.compat import iswin
+from src.compat import iswin, ismac
 from src.config import Config, get_minecraft_dir
 from src.ely_by.utils import ElyByUser
 from src.errors import LauncherError
@@ -43,6 +43,8 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
         java_options.append(
             '-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
         )
+    if ismac():
+        java_options.append('-XstartOnFirstThread')
     libraries = [str(mc_dir / x) for x in modpack_index.objects if x.split('/')[0] == 'libraries']
     libraries.append(str(mc_dir / CLIENT_FILENAME))
     minecraft_options = [
