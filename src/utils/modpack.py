@@ -28,6 +28,9 @@ class ModpackIndex:
     version: str
     asset_index: str
     main_class: str
+    classpath: list[str] | None
+    java_args: list[dict]
+    game_args: list[dict]
     include: list[str]
     objects: dict[str, str]
 
