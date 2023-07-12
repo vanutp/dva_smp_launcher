@@ -184,17 +184,17 @@ def validate_user_java(path: str):
     java = check_java(path)
     if not java:
         raise inquirer.errors.ValidationError(
-            path, reason='Jaba не найдена по этому пути'
+            path, reason='Java не найдена по этому пути'
         )
     if not is_good_version(java):
         raise inquirer.errors.ValidationError(
-            path, reason='Неправильная версия jabi, нужна 17'
+            path, reason='Неправильная версия Java, нужна 17'
         )
     return True
 
 
 def ask_user_java(default: str = None) -> JavaInstall:
-    user_java = ask('Путь к jabe', validate=validate_user_java, default=default)
+    user_java = ask('Полный путь к java (javaw.exe на Windows)', validate=validate_user_java, default=default)
     return check_java(user_java)
 
 
@@ -214,9 +214,9 @@ def find_java() -> str:
 
     res = [x for x in res if x and is_good_version(x)]
     if not res:
-        print('Jaba 17 (нужна прям 17) не найдена')
+        print('Java 17 (нужна прям 17) не найдена')
         print('Установите ее с https://adoptium.net/ и перезапустите лаунчер')
-        print('Если jaba на самом деле установлена, введите путь к ней')
+        print('Если Java на самом деле установлена, введите путь к ней')
         return ask_user_java().path
 
     return res[0].path

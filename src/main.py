@@ -31,7 +31,7 @@ async def main_menu(user_info: ElyByUser, config: Config):
             'Выберите опцию',
             [
                 ('Играть', 'start'),
-                (f'Путь к jabe ({config.java_path or "Не задан"})', 'java_path'),
+                (f'Путь к Java ({config.java_path or "Не задан"})', 'java_path'),
                 (f'Выделенная память ({config.xmx} МиБ)', 'xmx'),
                 (
                     f'Путь к ассетам ({config.assets_dir or "По умолчанию"})',
