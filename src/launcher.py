@@ -129,7 +129,6 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
         modpack_index.main_class,
         *minecraft_options,
     ]
-    open('b.txt', 'w').write('\n  '.join(command))
     p = Popen(command, start_new_session=True, cwd=str(mc_dir))
     await asyncio.sleep(3)
     if p.poll() is not None:
