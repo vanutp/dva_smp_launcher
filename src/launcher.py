@@ -61,7 +61,7 @@ def replace_launch_config_variables(argument: str, variables: dict[str, str]):
 
 async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Config):
     print('[green]Запуск![/green]', flush=True)
-    mc_dir = get_minecraft_dir()
+    mc_dir = get_minecraft_dir(modpack_index.modpack_name)
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
     if modpack_index.classpath:

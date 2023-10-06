@@ -7,7 +7,7 @@ import httpx
 from rich.progress import track, Progress
 
 from build_cfg import SERVER_BASE
-from src.config import get_minecraft_dir, Config
+from src.config import get_minecraft_dir, Config, get_dirs
 from src.errors import LauncherError
 
 
@@ -25,6 +25,7 @@ async def download_file(client: httpx.AsyncClient, url: str, path: Path) -> None
 
 @dataclass
 class ModpackIndex:
+    modpack_name: str
     version: str
     asset_index: str
     main_class: str
@@ -36,18 +37,18 @@ class ModpackIndex:
 
 
 def get_assets_dir(config: Config):
-    return Path(config.assets_dir or (get_minecraft_dir() / 'assets'))
+    return Path(config.assets_dir or (get_dirs().user_data_path / 'assets'))
 
 
 async def sync_modpack(config: Config) -> ModpackIndex:
-    mc_dir = get_minecraft_dir()
-    assets_dir = get_assets_dir(config)
-
     print('Проверка файлов сборки...', end='', flush=True)
     index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}index.json')
     index_resp.raise_for_status()
     index = ModpackIndex(**index_resp.json())
     index.include = [Path(x) for x in index.include]
+
+    mc_dir = get_minecraft_dir(index.modpack_name)
+    assets_dir = get_assets_dir(config)
 
     # [(is_asset, relative_path)]
     to_hash: list[tuple[bool, str]] = []

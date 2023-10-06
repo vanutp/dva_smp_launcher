@@ -215,6 +215,7 @@ def create_index() -> None:
         str(k): v for k, v in hash_dir(target_dir, exclude=[Path('index.json')]).items()
     }
     index = {
+        'modpack_name': modpack_name,
         'version': version_data['jar'],
         'asset_index': version_data['assetIndex']['id'],
         'main_class': version_data['mainClass'],

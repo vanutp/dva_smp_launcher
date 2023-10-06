@@ -22,8 +22,8 @@ def get_config_path():
     return get_dirs().user_config_path / 'config.json'
 
 
-def get_minecraft_dir():
-    res = get_dirs().user_data_path / '.minecraft'
+def get_minecraft_dir(modpack_name: str):
+    res = get_dirs().user_data_path / 'modpacks' / modpack_name
     res.mkdir(parents=True, exist_ok=True)
     return res
 
