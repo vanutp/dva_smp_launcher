@@ -3,8 +3,6 @@ name = "libs-downloader"
 version = "0.1.0"
 description = ""
 authors = ["Ivan Filipenkov <hello@vanutp.dev>"]
-readme = "README.md"
-packages = [{include = "libs_downloader"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
