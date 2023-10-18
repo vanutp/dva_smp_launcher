@@ -1,5 +1,6 @@
 import asyncio
 import os.path
+import shlex
 from subprocess import Popen
 
 from rich import print
@@ -103,6 +104,7 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
         f'-Xmx{config.xmx}M',
         '-Duser.language=en',
         '-Dfile.encoding=UTF-8',
+        *shlex.split(config.java_options),
     ]
     for arg in modpack_index.java_args:
         if not isinstance(arg['value'], list):

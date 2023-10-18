@@ -12,6 +12,7 @@ class Config:
     java_path: str = ''
     assets_dir: str = ''
     xmx: int = 3072
+    java_options: str = ''
 
 
 def get_dirs():
