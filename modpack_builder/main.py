@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 from tqdm import tqdm
 
-version_data_path = '/home/fox/.minecraft/versions/quilt-loader-0.21.0-1.20.1/quilt-loader-0.21.0-1.20.1.json'
+version_data_path = '/home/fox/.minecraft/versions/fabric-loader-0.14.22-1.20.1/fabric-loader-0.14.22-1.20.1.json'
 instance_dir = '/home/fox/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/VanillaPotato/.minecraft'
 cfg_copy_extra = [
     'authlib-injector.jar',
@@ -78,9 +78,9 @@ def get_new_lib_hashes() -> dict[Path, tuple[str | None, str]]:
 async def download_missing_libs():
     existing = hash_dir(libs_dir)
     new = get_new_lib_hashes()
-    # for lib in existing:
-    #     if lib not in new:
-    #         (libs_dir / lib).unlink()
+    for lib in existing:
+        if lib not in new:
+            (libs_dir / lib).unlink()
     to_download = []
     for lib in new:
         if lib not in existing or (
@@ -123,7 +123,7 @@ async def download_missing_assets() -> None:
     new = get_new_asset_hashes(asset_index)
     for obj in existing:
         if obj not in new:
-            (assets_dir / obj).unlink()
+            (assets_dir / 'objects' / obj).unlink()
     to_download = set()
     for obj in new:
         if obj not in existing or existing[obj] != new[obj]:
