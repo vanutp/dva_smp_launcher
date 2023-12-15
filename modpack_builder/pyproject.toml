@@ -8,6 +8,7 @@ authors = ["Ivan Filipenkov <hello@vanutp.dev>"]
 python = "^3.11"
 httpx = "^0.24.1"
 tqdm = "^4.65.0"
+pydantic = "^2.5.2"
 
 
 [build-system]

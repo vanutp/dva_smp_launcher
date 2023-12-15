@@ -13,6 +13,7 @@ class Config:
     assets_dir: str = ''
     xmx: int = 3072
     java_options: str = ''
+    modpack: str = ''
 
 
 def get_dirs():

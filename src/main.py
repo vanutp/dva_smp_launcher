@@ -14,7 +14,7 @@ from src.launcher import launch
 from src.tui import ensure_tty, ask, clear
 from src.update import update_if_required
 from src.utils.java import find_java, ask_user_java
-from src.utils.modpack import sync_modpack
+from src.utils.modpack import sync_modpack, ModpackNotFoundError, load_indexes, ModpackIndex
 
 
 def validate_memory(mem: str):
@@ -23,14 +23,25 @@ def validate_memory(mem: str):
     return True
 
 
-async def main_menu(user_info: ElyByUser, config: Config):
+async def select_modpack(indexes: list[ModpackIndex]):
+    if len(indexes) == 1:
+        return indexes[0].modpack_name
+    return tui.choice(
+        'Выберите сборку', [(x.modpack_name, x.modpack_name) for x in indexes]
+    )
+
+
+async def main_menu(indexes: list[ModpackIndex], user_info: ElyByUser, config: Config):
+    print('Загрузка...', end='', flush=True)
     while True:
         clear()
         print(f'Вы вошли как [green]{user_info.username}[/green]')
+        select_modpack_entry = [(f'Изменить сборку (выбрана {config.modpack})', 'change_modpack')] if len(indexes) > 1 else []
         answer = tui.choice(
             'Выберите опцию',
             [
                 ('Играть', 'start'),
+                *select_modpack_entry,
                 (f'Путь к Java ({config.java_path or "Не задан"})', 'java_path'),
                 (f'Выделенная память ({config.xmx} МиБ)', 'xmx'),
                 (
@@ -44,7 +55,19 @@ async def main_menu(user_info: ElyByUser, config: Config):
                 ('Выход', 'exit'),
             ],
         )
-        if answer == 'java_path':
+        if answer == 'start':
+            clear()
+            try:
+                modpack_index = await sync_modpack(config)
+            except ModpackNotFoundError:
+                indexes = await load_indexes()
+                config.modpack = await select_modpack(indexes)
+            else:
+                await launch(modpack_index, user_info, config)
+                break
+        elif answer == 'change_modpack':
+            config.modpack = await select_modpack(indexes)
+        elif answer == 'java_path':
             config.java_path = ask_user_java(config.java_path).path
         elif answer == 'xmx':
             config.xmx = int(
@@ -64,15 +87,9 @@ async def main_menu(user_info: ElyByUser, config: Config):
                 'Дополнительные опции Java',
                 default=config.java_options,
             )
-        elif answer in ['start', 'exit']:
+        elif answer == 'exit':
             break
         save_config(config)
-    if answer == 'exit':
-        return
-    elif answer == 'start':
-        clear()
-        modpack_index = await sync_modpack(config)
-        await launch(modpack_index, user_info, config)
 
 
 async def _main():
@@ -86,7 +103,12 @@ async def _main():
         config.java_path = find_java()
         save_config(config)
     user_info = await get_user(config.token)
-    await main_menu(user_info, config)
+    indexes = await load_indexes()
+    if not config.modpack:
+        config.modpack = await select_modpack(indexes)
+        print(config.modpack)
+        save_config(config)
+    await main_menu(indexes, user_info, config)
 
 
 def main():

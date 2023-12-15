@@ -1,0 +1,21 @@
+{
+  "exec_before_all": "scp dva-smp@ssh.vanutp.dev:modpack/index.json modpacks/index.json",
+  "exec_after_all": "scp modpacks/index.json dva-smp@ssh.vanutp.dev:modpack/index.json",
+  "modpacks": [
+    {
+      "exec_before": "cd /home/fox/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/VanillaPotato/.minecraft && python bump_version.py",
+      "exec_after": "rsync -av --delete modpacks/NetherPowerline/ dva-smp@ssh.vanutp.dev:modpack/NetherPowerline/",
+      "version_data_path": "/home/fox/.minecraft/versions/fabric-loader-0.15.2-1.20.1/fabric-loader-0.15.2-1.20.1.json",
+      "instance_dir": "/home/fox/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/VanillaPotato/.minecraft",
+      "copy_extra": [
+        "authlib-injector.jar",
+        "servers.dat",
+        "config",
+        "version.txt"
+      ],
+      "modpack_name": "NetherPowerline",
+      "clean_forge_libs_path": null,
+      "forge_libs_list": null
+    }
+  ]
+}
