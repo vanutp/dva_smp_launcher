@@ -119,17 +119,19 @@ async def sync_modpack(config: Config) -> ModpackIndex:
                 target_file = assets_dir / obj.removeprefix('assets/')
             else:
                 target_file = mc_dir / obj
-            retries_left = 3
+            max_retries = 6
+            retries = 0
             while True:
                 try:
                     await download_file(client, url, target_file)
                     break
-                except httpx.TimeoutException:
-                    retries_left -= 1
-                    if retries_left == 0:
+                except httpx.TransportError as e:
+                    retries += 1
+                    if retries == max_retries:
                         raise LauncherError(
-                            'Не удалось загрузить модпак (TimeoutException)'
+                            f'Не удалось загрузить модпак ({type(e).__name__})'
                         )
+                    await asyncio.sleep(retries)
 
     async def report_progress(total: int):
         with Progress() as progress:
