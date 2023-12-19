@@ -27,16 +27,10 @@ modules:
 
 - name: dvasmp
   buildsystem: simple
-  secret-env:
-  - CLIENT_ID
-  - CLIENT_SECRET
-  - SERVER_BASE
   sources:
   - type: git
     url: https://git.vanutp.dev/vanutp/dva_smp_launcher
-    commit: 58214f05b4bbf109de7e04966d16458d653e6c77
   build-commands:
-  - python write_build_cfg.py
   - mkdir -p /app/share/dvasmp
   - cp -r assets modpack_builder src launch.py build_cfg.py /app/share/dvasmp
 
