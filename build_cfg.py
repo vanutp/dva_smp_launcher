@@ -1,3 +1,3 @@
-CLIENT_ID = "dvasmp1"
-CLIENT_SECRET = "ICLLyGfzhLCyHhAiH5kmcL4QOt7N7RNrQbDkrUE1kB5GOu_EPo503iz3nsiZ34mq"
-SERVER_BASE = "https://mc.vanutp.dev/"
+CLIENT_ID = "potatolauncher"
+CLIENT_SECRET = "nN13yDfQ9Tjfk-gDCu3X48-ju6yYFtEtmGgyDlhd2ej_7oC7aetTGsbfwjQlMaiG"
+SERVER_BASE = "https://mc.petr1furious.me/"

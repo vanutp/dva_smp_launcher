@@ -14,7 +14,7 @@ jobs:
         os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
     env:
       SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
-      SERVER_PATH: ${{ vars.SERVER_PATH }}
+      SERVER_PATH: ${{ secrets.SERVER_PATH }}
 
     steps:
       - uses: actions/checkout@v2
@@ -26,7 +26,7 @@ jobs:
       - run: poetry install --no-root
       - run: poetry run pyinstaller --onefile --name dva_smp_launcher --exclude-module PIL --icon assets/dva_smp_launcher.png launch.py
       - if: ${{ github.ref }} == master
-        uses: shimataro/ssh-key-action@685d0f20da72e4b53cc81d373a2ed0a867770e46
+        uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.SSH_KEY }}
           known_hosts: ${{ secrets.KNOWN_HOSTS }}
