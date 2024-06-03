@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from starlette.routing import Route
 
-from build_cfg import CLIENT_ID, CLIENT_SECRET
+from build_cfg import CLIENT_ID, CLIENT_SECRET, APP_NAME
 
 LISTEN_PORT = 18741
 REDIRECT_URI = f'http://127.0.0.1:{LISTEN_PORT}/callback'
@@ -39,7 +39,7 @@ async def authorize() -> str:
             return Response('Неверный код', 400)
         server.should_exit = True
         return RedirectResponse(
-            'https://account.ely.by/oauth2/code/success?appName=DVA SMP', 302
+            f'https://account.ely.by/oauth2/code/success?appName={APP_NAME}', 302
         )
 
     app = Starlette(

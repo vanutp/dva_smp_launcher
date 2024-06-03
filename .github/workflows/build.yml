@@ -16,6 +16,7 @@ jobs:
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
       SERVER_PATH: ${{ secrets.SERVER_PATH }}
+      LAUNCHER_NAME: ${{ vars.LAUNCHER_NAME }}
 
     steps:
       - uses: actions/checkout@v2
@@ -25,7 +26,7 @@ jobs:
       - run: pip install poetry==1.5.1
       - run: mkdir .venv
       - run: poetry install --no-root
-      - run: poetry run pyinstaller --onefile --name dva_smp_launcher --exclude-module PIL --icon assets/dva_smp_launcher.png launch.py
+      - run: poetry run pyinstaller --onefile --name $LAUNCHER_NAME --exclude-module PIL --icon assets/$LAUNCHER_NAME.png launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@v2
         with:
@@ -33,7 +34,7 @@ jobs:
           known_hosts: ${{ secrets.KNOWN_HOSTS }}
       - if: ${{ github.ref }} == master
         env:
-          TARGET_FILENAME: ${{ fromJSON('{"windows-latest":"dva_smp_launcher.exe","ubuntu-latest":"dva_smp_launcher_linux","macos-latest":"dva_smp_launcher_macos"}')[matrix.os] }}
+          TARGET_FILENAME: ${{ format(fromJSON('{"windows-latest":"{0}.exe","ubuntu-latest":"{0}_linux","macos-latest":"{0}_macos"}')[matrix.os], env.LAUNCHER_NAME) }}
           SHA1SUM: ${{ fromJSON('{"windows-latest":"sha1sum","ubuntu-latest":"sha1sum","macos-latest":"shasum"}')[matrix.os] }}
         run: |
           mv dist/* dist/$TARGET_FILENAME || true
