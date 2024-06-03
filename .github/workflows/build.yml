@@ -13,9 +13,6 @@ jobs:
       matrix:
         os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
     env:
-      CLIENT_ID: ${{ secrets.CLIENT_ID }}
-      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-      SERVER_BASE: ${{ vars.SERVER_BASE }}
       SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
       SERVER_PATH: ${{ vars.SERVER_PATH }}
 
@@ -27,7 +24,6 @@ jobs:
       - run: pip install poetry==1.5.1
       - run: mkdir .venv
       - run: poetry install --no-root
-      - run: python write_build_cfg.py
       - run: poetry run pyinstaller --onefile --name dva_smp_launcher --exclude-module PIL --icon assets/dva_smp_launcher.png launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@685d0f20da72e4b53cc81d373a2ed0a867770e46
