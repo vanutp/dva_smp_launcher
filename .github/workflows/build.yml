@@ -13,6 +13,7 @@ jobs:
       matrix:
         os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
     env:
+      SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
       SERVER_PATH: ${{ secrets.SERVER_PATH }}
 
@@ -38,7 +39,7 @@ jobs:
           mv dist/* dist/$TARGET_FILENAME || true
           $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
-        run: scp dist/* $SERVER_ADDR:$SERVER_PATH/
+        run: scp dist/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
       - uses: actions/upload-artifact@v2
         with:
           name: dist-${{ matrix.os }}
