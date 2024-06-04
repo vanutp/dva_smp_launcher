@@ -11,7 +11,7 @@ from starlette.routing import Route
 from build_cfg import CLIENT_ID, CLIENT_SECRET, APP_NAME
 
 LISTEN_PORT = 18741
-REDIRECT_URI = f'http://127.0.0.1:{LISTEN_PORT}/callback'
+REDIRECT_URI = f'http://127.0.0.1:{LISTEN_PORT}/'
 
 
 async def authorize() -> str:
@@ -44,7 +44,7 @@ async def authorize() -> str:
 
     app = Starlette(
         routes=[
-            Route('/callback', handle),
+            Route('/', handle),
         ]
     )
 
