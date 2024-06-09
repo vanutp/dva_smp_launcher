@@ -5,3 +5,4 @@ dist/
 build/
 *.spec
 **/__pycache__/
+.flatpak-builder/
