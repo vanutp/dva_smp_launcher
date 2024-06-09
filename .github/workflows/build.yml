@@ -31,7 +31,7 @@ jobs:
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.SSH_KEY }}
-          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+          known_hosts: no
       - if: ${{ github.ref }} == master
         env:
           TARGET_FILENAME: ${{ format(fromJSON('{"windows-latest":"{0}.exe","ubuntu-latest":"{0}_linux","macos-latest":"{0}_macos"}')[matrix.os], env.LAUNCHER_NAME) }}
@@ -40,7 +40,7 @@ jobs:
           mv dist/* dist/$TARGET_FILENAME || true
           $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
-        run: scp dist/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
+        run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dist/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
       - uses: actions/upload-artifact@v2
         with:
           name: dist-${{ matrix.os }}

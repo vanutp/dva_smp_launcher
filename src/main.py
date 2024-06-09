@@ -37,12 +37,23 @@ async def main_menu(indexes: list[ModpackIndex], user_info: ElyByUser, config: C
         clear()
         print(f'Вы вошли как [green]{user_info.username}[/green]')
         select_modpack_entry = [(f'Изменить сборку (выбрана {config.modpack})', 'change_modpack')] if len(indexes) > 1 else []
+
+        selected_modpack_index = next((x for x in indexes if x.modpack_name == config.modpack), None)
+        if not selected_modpack_index:
+            raise ValueError('Selected modpack not found in indexes')
+
+        required_java_version = selected_modpack_index.java_version
+        if not (config.modpack in config.java_path and config.java_path[config.modpack]):
+            config.java_path[config.modpack] = find_java(required_java_version)
+            save_config(config)
+        java_path = config.java_path[config.modpack]
+
         answer = tui.choice(
             'Выберите опцию',
             [
                 ('Играть', 'start'),
                 *select_modpack_entry,
-                (f'Путь к Java ({config.java_path or "Не задан"})', 'java_path'),
+                (f'Путь к Java ({java_path or "Не задан"})', 'java_path'),
                 (f'Выделенная память ({config.xmx} МиБ)', 'xmx'),
                 (
                     f'Путь к ассетам ({config.assets_dir or "По умолчанию"})',
@@ -68,7 +79,7 @@ async def main_menu(indexes: list[ModpackIndex], user_info: ElyByUser, config: C
         elif answer == 'change_modpack':
             config.modpack = await select_modpack(indexes)
         elif answer == 'java_path':
-            config.java_path = ask_user_java(config.java_path).path
+            config.java_path[config.modpack] = ask_user_java(required_java_version, java_path).path
         elif answer == 'xmx':
             config.xmx = int(
                 ask(
@@ -99,15 +110,14 @@ async def _main():
     if not config.token:
         config.token = await authorize()
         save_config(config)
-    if not config.java_path:
-        config.java_path = find_java()
-        save_config(config)
     user_info = await get_user(config.token)
+
     indexes = await load_indexes()
-    if not config.modpack:
+    if not config.modpack or not any(x.modpack_name == config.modpack for x in indexes):
         config.modpack = await select_modpack(indexes)
         print(config.modpack)
         save_config(config)
+
     await main_menu(indexes, user_info, config)
 
 

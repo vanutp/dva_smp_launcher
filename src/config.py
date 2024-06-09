@@ -11,7 +11,7 @@ from build_cfg import LAUNCHER_NAME
 @dataclass
 class Config:
     token: str = ''
-    java_path: str = ''
+    java_path: dict[str, str] = dataclasses.field(default_factory=dict)
     assets_dir: str = ''
     xmx: int = 3072
     java_options: str = ''
@@ -43,13 +43,17 @@ def load_config() -> Config:
     except JSONDecodeError:
         return Config()
 
-    res = Config(**data)
-    if not (
-        isinstance(res.token, str)
-        and isinstance(res.java_path, str)
-        and isinstance(res.assets_dir, str)
-        and isinstance(res.xmx, int)
-    ):
+    try:
+        res = Config(**data)
+        if not (
+            isinstance(res.token, str)
+            and isinstance(res.java_path, dict)
+            and isinstance(res.assets_dir, str)
+            and isinstance(res.xmx, int)
+        ):
+            return Config()
+    except TypeError as e:
+        print(e)
         return Config()
 
     return res

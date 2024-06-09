@@ -64,12 +64,14 @@ class ModpackSpec(BaseModel):
     instance_dir: Path
     copy_extra: list[str]
     modpack_name: str
+    java_version: str
     clean_forge_libs_path: Path | None
     forge_libs_list: list[str] | None
 
 
 class ModpackIndex(BaseModel):
     modpack_name: str
+    java_version: str
     version: str
     asset_index: str
     main_class: str
@@ -243,6 +245,7 @@ class ModpackGenerator:
         }
         return ModpackIndex(
             modpack_name=self.spec.modpack_name,
+            java_version=self.spec.java_version,
             version=self.version_data['jar'],
             asset_index=self.version_data['assetIndex']['id'],
             main_class=self.version_data['mainClass'],

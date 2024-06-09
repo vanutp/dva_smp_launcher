@@ -25,8 +25,6 @@ if iswin():
         QueryValueEx,
     )
 
-REQUIRED_JAVA = '17'
-
 
 @dataclass
 class JavaInstall:
@@ -61,8 +59,8 @@ def check_java(path: JavaInstall | str | Path) -> JavaInstall | None:
     )
 
 
-def is_good_version(java: JavaInstall) -> bool:
-    return java.version == '17' or java.version.startswith('17.')
+def is_good_version(required_version: str, java: JavaInstall) -> bool:
+    return java.version == required_version or java.version.startswith(f'{required_version}.')
 
 
 def find_java_in_registry(
@@ -180,25 +178,24 @@ def find_java_macos() -> list[JavaInstall | None]:
     return res
 
 
-def validate_user_java(path: str):
+def validate_user_java(required_version: str, path: str):
     java = check_java(path)
     if not java:
         raise inquirer.errors.ValidationError(
             path, reason='Java не найдена по этому пути'
         )
-    if not is_good_version(java):
+    if not is_good_version(required_version, java):
         raise inquirer.errors.ValidationError(
-            path, reason='Неправильная версия Java, нужна 17'
+            path, reason=f'Неправильная версия Java, нужна {required_version}'
         )
     return True
 
-
-def ask_user_java(default: str = None) -> JavaInstall:
-    user_java = ask('Полный путь к java (javaw.exe на Windows)', validate=validate_user_java, default=default)
+def ask_user_java(required_version: str, default: str = None) -> (JavaInstall | None):
+    user_java = ask('Полный путь к java (javaw.exe на Windows)', validate=lambda path: validate_user_java(required_version, path), default=default)
     return check_java(user_java)
 
 
-def find_java() -> str:
+def find_java(required_version: str) -> str:
     if iswin():
         res = find_java_win()
     elif islinux():
@@ -212,12 +209,12 @@ def find_java() -> str:
     if default_java_path and (default_java := check_java(default_java_path)):
         res.append(default_java)
 
-    res = [x for x in res if x and is_good_version(x)]
+    res = [x for x in res if x and is_good_version(required_version, x)]
     if not res:
-        print('Java 17 (нужна прям 17) не найдена')
+        print(f'Java {required_version} не найдена')
         print('Установите ее с https://adoptium.net/ и перезапустите лаунчер')
         print('Если Java на самом деле установлена, введите путь к ней')
-        return ask_user_java().path
+        return ask_user_java(required_version).path
 
     return res[0].path
 
