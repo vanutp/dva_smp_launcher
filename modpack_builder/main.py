@@ -65,7 +65,7 @@ class ModpackSpec(BaseModel):
     copy_extra: list[str]
     modpack_name: str
     clean_forge_libs_path: Path | None
-    forge_libs_list: list[Path] | None
+    forge_libs_list: list[str] | None
 
 
 class ModpackIndex(BaseModel):
