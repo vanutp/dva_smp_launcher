@@ -12,7 +12,6 @@ from src.errors import LauncherError
 from src.utils.modpack import ModpackIndex, get_assets_dir
 
 AUTHLIB_INJECTOR_FILENAME = 'authlib-injector.jar'
-CLIENT_FILENAME = 'client.jar'
 # from LL (formerly TL) launcher
 GC_OPTIONS = [
     '-XX:+UnlockExperimentalVMOptions',
@@ -73,7 +72,7 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
         classpath = [
             str(mc_dir / x) for x in modpack_index.objects if x.split('/')[0] == 'libraries'
         ]
-        classpath.append(str(mc_dir / CLIENT_FILENAME))
+    classpath.append(str(mc_dir / modpack_index.client_filename))
 
     variables = {
         'natives_directory': str(mc_dir / 'natives'),

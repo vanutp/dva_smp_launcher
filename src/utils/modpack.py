@@ -36,6 +36,7 @@ class ModpackIndex:
     game_args: list[dict]
     include: list[str]
     objects: dict[str, str]
+    client_filename: str
 
 
 def get_assets_dir(config: Config):

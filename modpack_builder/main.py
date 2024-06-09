@@ -78,6 +78,7 @@ class ModpackIndex(BaseModel):
     game_args: list[dict]
     include: list[str]
     objects: dict[str, str]
+    client_filename: str
 
 
 class ModpackGenerator:
@@ -91,6 +92,10 @@ class ModpackGenerator:
         self.target_dir.mkdir(parents=True, exist_ok=True)
         with open(spec.version_data_path) as f:
             self.version_data = json.load(f)
+
+    def get_client_filename(self):
+        version = self.version_data['jar']
+        return f'{version}.jar'
 
     def get_new_lib_hashes(self) -> dict[Path, tuple[str | None, str]]:
         res = {}
@@ -109,9 +114,10 @@ class ModpackGenerator:
         libs_dir = self.target_dir / 'libraries'
         existing = hash_dir(libs_dir)
         new = self.get_new_lib_hashes()
-        for lib in existing:
-            if lib not in new:
-                (libs_dir / lib).unlink()
+        if not self.spec.clean_forge_libs_path:
+            for lib in existing:
+                if lib not in new:
+                    (libs_dir / lib).unlink()
         to_download = []
         for lib in new:
             if lib not in existing or (
@@ -178,7 +184,7 @@ class ModpackGenerator:
             await asyncio.gather(*tasks)
 
     async def download_client(self) -> None:
-        client_path = self.target_dir / 'client.jar'
+        client_path = self.target_dir / self.get_client_filename()
         if client_path.is_file():
             with open(client_path, 'rb') as f:
                 client_hash = sha1(f.read()).hexdigest()
@@ -246,10 +252,11 @@ class ModpackGenerator:
             include=[
                 'libraries',
                 'mods',
-                'client.jar',
+                self.get_client_filename(),
                 *self.spec.copy_extra,
             ],
             objects=hashes,
+            client_filename=self.get_client_filename(),
         )
 
     async def generate(self) -> ModpackIndex:
