@@ -23,10 +23,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.11
-      - run: pip install poetry==1.5.1
+      - run: pip install poetry==1.8.3
       - run: mkdir .venv
       - run: poetry install --no-root
-      - run: poetry run pyinstaller --onefile --name $LAUNCHER_NAME --exclude-module PIL --icon assets/$LAUNCHER_NAME.png launch.py
+      - run: poetry run pyinstaller --onefile --copy-metadata readchar --name $LAUNCHER_NAME --exclude-module PIL --icon assets/$LAUNCHER_NAME.png launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@v2
         with:
