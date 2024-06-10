@@ -19,8 +19,8 @@ jobs:
       LAUNCHER_NAME: ${{ vars.LAUNCHER_NAME }}
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: 3.11
       - run: pip install poetry==1.5.1
@@ -41,7 +41,7 @@ jobs:
           $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
         run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dist/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os }}
           path: dist/*
