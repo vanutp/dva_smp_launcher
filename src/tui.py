@@ -6,13 +6,6 @@ from inquirer.render import ConsoleRender
 
 from src.errors import LauncherError
 
-# Do not show selected value after prompt i.e.
-# Before:
-# [?] Choose an option: Path to java (/usr/lib/jvm/java-17-openjdk/bin/java)
-# After:
-# [?] Choose an option:
-inquirer.render.console._list.List.get_current_value = lambda _: ''
-
 
 def ensure_tty():
     if not sys.stdout.isatty():
