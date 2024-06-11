@@ -130,7 +130,8 @@
         "libraries/org/lwjgl/lwjgl/3.3.1/lwjgl-3.3.1-natives-macos.jar",
         "libraries/org/lwjgl/lwjgl/3.3.1/lwjgl-3.3.1-natives-macos-arm64.jar",
         "libraries/org/lwjgl/lwjgl/3.3.1/lwjgl-3.3.1-natives-windows.jar",
-        "libraries/org/slf4j/slf4j-api/2.0.1/slf4j-api-2.0.1.jar"
+        "libraries/org/slf4j/slf4j-api/2.0.1/slf4j-api-2.0.1.jar",
+        "libraries/ca/weblite/java-objc-bridge/1.1/java-objc-bridge-1.1.jar"
       ]
     }
   ]
