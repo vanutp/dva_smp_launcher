@@ -12,7 +12,7 @@ from starlette.routing import Route
 
 from build_cfg import CLIENT_ID, CLIENT_SECRET, APP_NAME
 
-REDIRECT_URI_BASE = 'http://127.0.0.1'
+REDIRECT_URI_BASE = 'http://localhost'
 
 
 async def authorize() -> str:
