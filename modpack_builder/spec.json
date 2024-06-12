@@ -2,10 +2,10 @@
   "exec_after_all": "scp modpacks/index.json potato-launcher@ssh.petr1furious.me:modpack/index.json",
   "modpacks": [
     {
-      "exec_before": "chmod -R +r '/Users/petrtsopa/Library/Application Support/PollyMC/instances/vanilla_fo_to_copy/minecraft'",
+      "exec_before": "chmod -R +r '/Users/petrtsopa/modpack-builder'",
       "exec_after": "rsync -av --delete modpacks/vanilla/ potato-launcher@ssh.petr1furious.me:modpack/vanilla/",
-      "version_data_path": "/Users/petrtsopa/Library/Application Support/minecraft/versions/fabric-loader-0.15.11-1.20.6/fabric-loader-0.15.11-1.20.6.json",
-      "instance_dir": "/Users/petrtsopa/Library/Application Support/PollyMC/instances/vanilla_fo_to_copy/minecraft",
+      "version_data_path": "/Users/petrtsopa/modpack-builder/fabric-loader-0.15.11-1.20.6.json",
+      "instance_dir": "/Users/petrtsopa/modpack-builder/minecraft",
       "copy_extra": [
         "authlib-injector.jar",
         "servers.dat",
