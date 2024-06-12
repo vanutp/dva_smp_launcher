@@ -12,10 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
-    env:
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
-      SERVER_PATH: ${{ secrets.SERVER_PATH }}
 
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +23,7 @@ jobs:
       - run: poetry install --no-root
       - run: |
           LAUNCHER_NAME=`python -c "from build_cfg import LAUNCHER_NAME; print(LAUNCHER_NAME)"`
-          poetry run pyinstaller --onefile --copy-metadata readchar --name $LAUNCHER_NAME --exclude-module PIL --icon assets/$LAUNCHER_NAME.png launch.py
+          poetry run pyinstaller --onefile --copy-metadata readchar --name "$LAUNCHER_NAME" --exclude-module PIL --icon assets/"$LAUNCHER_NAME".png launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@v2
         with:
@@ -44,14 +40,21 @@ jobs:
             TARGET_FILENAME="${LAUNCHER_NAME}_linux"
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             TARGET_FILENAME="${LAUNCHER_NAME}_macos"
+            TARGET_FILENAME_DMG="${TARGET_FILENAME}.dmg"
+            hdiutil create "$TARGET_FILENAME_DMG" -ov -volname "$LAUNCHER_NAME" -fs HFS+ -srcfolder "dist"
+            mv "$TARGET_FILENAME_DMG" dist/
             SHA1SUM="shasum"
           else
             echo "Unsupported OS: ${{ matrix.os }}"
             exit 1
           fi
-          mv dist/* dist/$TARGET_FILENAME || true
+          mv dist/"$LAUNCHER_NAME" dist/"$TARGET_FILENAME" || true
           $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
         run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dist/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
       - uses: actions/upload-artifact@v4
         with:
