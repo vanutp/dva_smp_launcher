@@ -16,7 +16,6 @@ jobs:
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
       SERVER_PATH: ${{ secrets.SERVER_PATH }}
-      LAUNCHER_NAME: ${{ vars.LAUNCHER_NAME }}
 
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +25,9 @@ jobs:
       - run: pip install poetry==1.8.3
       - run: mkdir .venv
       - run: poetry install --no-root
-      - run: poetry run pyinstaller --onefile --copy-metadata readchar --name $LAUNCHER_NAME --exclude-module PIL --icon assets/$LAUNCHER_NAME.png launch.py
+      - run: |
+          LAUNCHER_NAME=`python -c "from build_cfg import LAUNCHER_NAME; print(LAUNCHER_NAME)"`
+          poetry run pyinstaller --onefile --copy-metadata readchar --name $LAUNCHER_NAME --exclude-module PIL --icon assets/$LAUNCHER_NAME.png launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@v2
         with:
@@ -34,9 +35,20 @@ jobs:
           known_hosts: no
       - if: ${{ github.ref }} == master
         env:
-          TARGET_FILENAME: ${{ format(fromJSON('{"windows-latest":"{0}.exe","ubuntu-latest":"{0}_linux","macos-latest":"{0}_macos"}')[matrix.os], env.LAUNCHER_NAME) }}
-          SHA1SUM: ${{ fromJSON('{"windows-latest":"sha1sum","ubuntu-latest":"sha1sum","macos-latest":"shasum"}')[matrix.os] }}
+          SHA1SUM: sha1sum # Default value, will be overridden for macOS
         run: |
+          LAUNCHER_NAME=`python -c "from build_cfg import LAUNCHER_NAME; print(LAUNCHER_NAME)"`
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            TARGET_FILENAME="${LAUNCHER_NAME}.exe"
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            TARGET_FILENAME="${LAUNCHER_NAME}_linux"
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            TARGET_FILENAME="${LAUNCHER_NAME}_macos"
+            SHA1SUM="shasum"
+          else
+            echo "Unsupported OS: ${{ matrix.os }}"
+            exit 1
+          fi
           mv dist/* dist/$TARGET_FILENAME || true
           $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
