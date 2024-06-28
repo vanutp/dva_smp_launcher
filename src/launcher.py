@@ -5,9 +5,9 @@ from subprocess import Popen
 
 from rich import print
 
+from src.auth import AuthenticatedUser, AuthProvider, ElyByProvider
 from src.compat import iswin, ismac
 from src.config import Config, get_minecraft_dir
-from src.ely_by.utils import ElyByUser
 from src.errors import LauncherError
 from src.utils.modpack import ModpackIndex, get_assets_dir
 
@@ -59,18 +59,20 @@ def replace_launch_config_variables(argument: str, variables: dict[str, str]):
     return argument
 
 
-async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Config):
+async def launch(
+    modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
+):
     print('[green]Запуск![/green]', flush=True)
     mc_dir = get_minecraft_dir(modpack_index.modpack_name)
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
     if modpack_index.classpath:
-        classpath = [
-            str(mc_dir / x) for x in modpack_index.classpath
-        ]
+        classpath = [str(mc_dir / x) for x in modpack_index.classpath]
     else:
         classpath = [
-            str(mc_dir / x) for x in modpack_index.objects if x.split('/')[0] == 'libraries'
+            str(mc_dir / x)
+            for x in modpack_index.objects
+            if x.split('/')[0] == 'libraries'
         ]
     classpath.append(str(mc_dir / modpack_index.client_filename))
 
@@ -97,7 +99,6 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
     }
 
     java_options = [
-        f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}=ely.by',
         *GC_OPTIONS,
         '-Xms512M',
         f'-Xmx{config.xmx}M',
@@ -105,6 +106,10 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
         '-Dfile.encoding=UTF-8',
         *shlex.split(config.java_options),
     ]
+    if isinstance(AuthProvider.get(), ElyByProvider):
+        java_options.insert(
+            0, f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}=ely.by'
+        )
     for arg in modpack_index.java_args:
         if not isinstance(arg['value'], list):
             arg['value'] = [arg['value']]

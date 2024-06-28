@@ -6,9 +6,9 @@ import inquirer.errors
 from rich import print
 
 from src import tui
+from src.auth import AuthenticatedUser, AuthProvider
+from src.auth.base import UnauthorizedException
 from src.config import load_config, save_config, Config
-from src.ely_by import authorize
-from src.ely_by.utils import get_user, ElyByUser
 from src.errors import LauncherError
 from src.launcher import launch
 from src.tui import ensure_tty, ask, clear
@@ -31,7 +31,7 @@ async def select_modpack(indexes: list[ModpackIndex]):
     )
 
 
-async def main_menu(indexes: list[ModpackIndex], user_info: ElyByUser, config: Config):
+async def main_menu(indexes: list[ModpackIndex], user_info: AuthenticatedUser, config: Config):
     print('Загрузка...', end='', flush=True)
     while True:
         clear()
@@ -107,10 +107,16 @@ async def _main():
     await update_if_required()
     ensure_tty()
     config = load_config()
+    auth_provider = AuthProvider.get()
     if not config.token:
-        config.token = await authorize()
+        config.token = await auth_provider.authenticate()
         save_config(config)
-    user_info = await get_user(config.token)
+    try:
+        user_info = await auth_provider.get_user(config.token)
+    except UnauthorizedException:
+        config.token = await auth_provider.authenticate()
+        save_config(config)
+        user_info = await auth_provider.get_user(config.token)
 
     indexes = await load_indexes()
     if not config.modpack or not any(x.modpack_name == config.modpack for x in indexes):
