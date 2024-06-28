@@ -5,13 +5,14 @@
     {
       "exec_before": null,
       "exec_after": "rsync -av --delete modpacks/dva-summer-2024/ dva-smp@ssh.vanutp.dev:modpack/dva-summer-2024/",
-      "//meow": " && cd modpacks/dva-summer-2024/ && rm ../dva-summer-2024.zip && zip -r ../dva-summer-2024.zip mods config && scp ../dva-summer-2024.zip dva-smp@ssh.vanutp.dev:modpack/",
+      "//": " && cd modpacks/dva-summer-2024/ && rm ../dva-summer-2024.zip && zip -r ../dva-summer-2024.zip mods config && scp ../dva-summer-2024.zip dva-smp@ssh.vanutp.dev:modpack/",
       "version_data_path": "/home/fox/.var/app/ch.tlaun.TL/data/game/versions/1.20.1-forge-47.1.106/1.20.1-forge-47.1.106.json",
       "instance_dir": "/home/fox/.local/share/FjordLauncher/instances/sad-fox/.minecraft",
       "copy_extra": [
         "authlib-injector.jar",
         "servers.dat",
         "config/apotheosis",
+        "config/bclib/client.json",
         "config/carryon-common.toml",
         "config/creeperoverhaul.jsonc",
         "config/fancymenu/options.txt",
@@ -20,7 +21,8 @@
         "config/Obscuria/obscure-api-client.toml",
         "config/paxi",
         "config/quark-common.toml",
-        "configureddefaults"
+        "configureddefaults",
+        "kubejs/server_scripts/dvasmp.js"
       ],
       "modpack_name": "dva-summer-2024",
       "clean_forge_libs_path": "/home/fox/.var/app/ch.tlaun.TL/data/game/libraries",
