@@ -3,6 +3,7 @@
   "exec_after_all": "scp modpacks/index.json dva-smp@ssh.vanutp.dev:modpack/index.json",
   "modpacks": [
     {
+      "java_version": "17",
       "exec_before": null,
       "exec_after": "rsync -av --delete modpacks/dva-summer-2024/ dva-smp@ssh.vanutp.dev:modpack/dva-summer-2024/",
       "//": " && cd modpacks/dva-summer-2024/ && rm ../dva-summer-2024.zip && zip -r ../dva-summer-2024.zip mods config && scp ../dva-summer-2024.zip dva-smp@ssh.vanutp.dev:modpack/",
