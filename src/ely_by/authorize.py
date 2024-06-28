@@ -1,7 +1,6 @@
+import asyncio
 import logging
-import threading
 import webbrowser
-import time
 
 import httpx
 import uvicorn
@@ -12,7 +11,19 @@ from starlette.routing import Route
 
 from build_cfg import CLIENT_ID, CLIENT_SECRET, APP_NAME
 
-REDIRECT_URI_BASE = 'http://localhost'
+
+def print_auth_url(redirect_uri: str) -> None:
+    print('Авторизуйтесь в открывшемся окне браузера...')
+    url = (
+        f'https://account.ely.by/oauth2/v1'
+        f'?client_id={CLIENT_ID}'
+        f'&redirect_uri={redirect_uri}'
+        f'&response_type=code'
+        f'&scope=account_info%20minecraft_server_session'
+        f'&prompt=select_account'
+    )
+    print(f'Или откройте ссылку вручную: {url}')
+    webbrowser.open(url)
 
 
 async def authorize() -> str:
@@ -39,30 +50,16 @@ async def authorize() -> str:
 
     server_config = uvicorn.Config(app, port=0, log_level=logging.WARNING)
     server = uvicorn.Server(config=server_config)
-    
-    thread = threading.Thread(target=server.run)
-    thread.start()
-    
+
+    server_task = asyncio.create_task(server.serve())
+
     while not server.started:
-        pass
-
+        await asyncio.sleep(0.1)
     port = server.servers[0].sockets[0].getsockname()[1]
-    redirect_uri = f'{REDIRECT_URI_BASE}:{port}/'
+    redirect_uri = f'http://localhost:{port}/'
+    print_auth_url(redirect_uri)
 
-    print('Авторизуйтесь в открывшемся окне браузера...')
-    url = (
-        f'https://account.ely.by/oauth2/v1'
-        f'?client_id={CLIENT_ID}'
-        f'&redirect_uri={redirect_uri}'
-        f'&response_type=code'
-        f'&scope=account_info%20minecraft_server_session'
-        f'&prompt=select_account'
-    )
-    print(f'Или откройте ссылку вручную: {url}')
-    webbrowser.open(url)
-    
-    while not server.should_exit:
-        time.sleep(0.01)
+    await server_task
 
     if not code:
         raise ValueError('Server stopped before receiving the code')
@@ -71,7 +68,7 @@ async def authorize() -> str:
 
 
 class InvalidCodeError(ValueError):
-    ...
+    pass
 
 
 async def exchange_code(code: str, redirect_uri: str) -> str:
