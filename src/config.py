@@ -5,7 +5,7 @@ from json import JSONDecodeError
 
 from platformdirs import PlatformDirs
 
-from build_cfg import LAUNCHER_NAME
+from build_cfg import DATA_DIR_NAME
 
 
 @dataclass
@@ -19,7 +19,7 @@ class Config:
 
 
 def get_dirs():
-    return PlatformDirs(LAUNCHER_NAME, appauthor=False, ensure_exists=True, roaming=True)
+    return PlatformDirs(DATA_DIR_NAME, appauthor=False, ensure_exists=True, roaming=True)
 
 
 def get_config_path():

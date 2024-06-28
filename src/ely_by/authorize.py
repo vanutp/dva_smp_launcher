@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from starlette.routing import Route
 
-from build_cfg import CLIENT_ID, CLIENT_SECRET, APP_NAME
+from build_cfg import CLIENT_ID, CLIENT_SECRET, ELYBY_APP_NAME
 
 
 def print_auth_url(redirect_uri: str) -> None:
@@ -39,7 +39,7 @@ async def authorize() -> str:
             return Response('Неверный код', 400)
         server.should_exit = True
         return RedirectResponse(
-            f'https://account.ely.by/oauth2/code/success?appName={APP_NAME}', 302
+            f'https://account.ely.by/oauth2/code/success?appName={ELYBY_APP_NAME}', 302
         )
 
     app = Starlette(
