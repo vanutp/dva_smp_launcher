@@ -1,3 +1,4 @@
+import webbrowser
 from dataclasses import dataclass
 
 import httpx
@@ -23,6 +24,7 @@ class TGAuthProvider(AuthProvider):
         start_resp.raise_for_status()
         start_resp = LoginStartResponse(**start_resp.json())
         tg_deeplink = f'https://t.me/{self.bot_name}?start={start_resp.code}'
+        webbrowser.open(tg_deeplink)
         print('Нажмите start в боте')
         print('Или отсканируйте QR код:')
         qr = QRCode()
