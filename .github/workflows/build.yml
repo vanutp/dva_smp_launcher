@@ -18,6 +18,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - env:
+          BUILD_CFG: ${{ vars.BUILD_CFG }}
+        run: echo "$BUILD_CFG" > build_cfg.py
       - run: pip install poetry==1.8.3
       - run: mkdir .venv
       - run: poetry install --no-root

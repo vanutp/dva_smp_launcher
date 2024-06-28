@@ -6,3 +6,4 @@ build/
 *.spec
 **/__pycache__/
 .flatpak-builder/
+build_cfg.py
