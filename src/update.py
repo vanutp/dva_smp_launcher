@@ -8,17 +8,17 @@ import sys
 from rich import print
 from rich.progress import Progress
 
-from build_cfg import SERVER_BASE
+from build_cfg import SERVER_BASE, LAUNCHER_NAME
 from src.compat import iswin, ismac, islinux, is_frozen, chmod_x
 
 
 def get_update_url():
     if iswin():
-        return f'{SERVER_BASE}launcher/dva_smp_launcher.exe'
+        return f'{SERVER_BASE}launcher/{LAUNCHER_NAME}.exe'
     if ismac():
-        return f'{SERVER_BASE}launcher/dva_smp_launcher_macos'
+        return f'{SERVER_BASE}launcher/{LAUNCHER_NAME}_macos'
     if islinux():
-        return f'{SERVER_BASE}launcher/dva_smp_launcher_linux'
+        return f'{SERVER_BASE}launcher/{LAUNCHER_NAME}_linux'
     raise ValueError('Unsupported platform')
 
 

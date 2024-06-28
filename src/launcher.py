@@ -125,7 +125,7 @@ async def launch(modpack_index: ModpackIndex, user_info: ElyByUser, config: Conf
             )
 
     command = [
-        config.java_path,
+        config.java_path[modpack_index.modpack_name],
         *java_options,
         modpack_index.main_class,
         *minecraft_options,

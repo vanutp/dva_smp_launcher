@@ -12,34 +12,51 @@ jobs:
       fail-fast: false
       matrix:
         os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
-    env:
-      SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
-      SERVER_PATH: ${{ vars.SERVER_PATH }}
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.11
-      - run: pip install poetry==1.5.1
+          python-version: 3.12
+      - run: pip install poetry==1.8.3
       - run: mkdir .venv
       - run: poetry install --no-root
-      - run: poetry run pyinstaller --onefile --name dva_smp_launcher --exclude-module PIL --icon assets/dva_smp_launcher.png launch.py
+      - run: |
+          LAUNCHER_NAME=`python -c "from build_cfg import LAUNCHER_NAME; print(LAUNCHER_NAME)"`
+          poetry run pyinstaller --onefile --copy-metadata readchar --name "$LAUNCHER_NAME" --exclude-module PIL --icon assets/"$LAUNCHER_NAME".png launch.py
       - if: ${{ github.ref }} == master
-        uses: shimataro/ssh-key-action@685d0f20da72e4b53cc81d373a2ed0a867770e46
+        uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.SSH_KEY }}
-          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+          known_hosts: no
       - if: ${{ github.ref }} == master
         env:
-          TARGET_FILENAME: ${{ fromJSON('{"windows-latest":"dva_smp_launcher.exe","ubuntu-latest":"dva_smp_launcher_linux","macos-latest":"dva_smp_launcher_macos"}')[matrix.os] }}
-          SHA1SUM: ${{ fromJSON('{"windows-latest":"sha1sum","ubuntu-latest":"sha1sum","macos-latest":"shasum"}')[matrix.os] }}
+          SHA1SUM: sha1sum # Default value, will be overridden for macOS
         run: |
-          mv dist/* dist/$TARGET_FILENAME || true
+          LAUNCHER_NAME=`python -c "from build_cfg import LAUNCHER_NAME; print(LAUNCHER_NAME)"`
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            TARGET_FILENAME="${LAUNCHER_NAME}.exe"
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            TARGET_FILENAME="${LAUNCHER_NAME}_linux"
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            TARGET_FILENAME="${LAUNCHER_NAME}_macos"
+            TARGET_FILENAME_DMG="${TARGET_FILENAME}.dmg"
+            hdiutil create "$TARGET_FILENAME_DMG" -ov -volname "$LAUNCHER_NAME" -fs HFS+ -srcfolder "dist"
+            mv "$TARGET_FILENAME_DMG" dist/
+            SHA1SUM="shasum"
+          else
+            echo "Unsupported OS: ${{ matrix.os }}"
+            exit 1
+          fi
+          mv dist/"$LAUNCHER_NAME" dist/"$TARGET_FILENAME" || true
           $SHA1SUM dist/$TARGET_FILENAME | cut -f1 -d ' ' > dist/$TARGET_FILENAME.sha1
       - if: ${{ github.ref }} == master
-        run: scp dist/* $SERVER_ADDR:$SERVER_PATH/
-      - uses: actions/upload-artifact@v2
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
+          SERVER_PATH: ${{ secrets.SERVER_PATH }}
+        run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dist/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os }}
           path: dist/*

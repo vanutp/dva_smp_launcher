@@ -28,6 +28,7 @@ async def download_file(client: httpx.AsyncClient, url: str, path: Path) -> None
 @dataclass
 class ModpackIndex:
     modpack_name: str
+    java_version: str
     version: str
     asset_index: str
     main_class: str

@@ -1,5 +1,7 @@
 import logging
+import threading
 import webbrowser
+import time
 
 import httpx
 import uvicorn
@@ -8,25 +10,12 @@ from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from starlette.routing import Route
 
-from build_cfg import CLIENT_ID, CLIENT_SECRET
+from build_cfg import CLIENT_ID, CLIENT_SECRET, APP_NAME
 
-LISTEN_PORT = 18741
-REDIRECT_URI = f'http://127.0.0.1:{LISTEN_PORT}/callback'
+REDIRECT_URI_BASE = 'http://localhost'
 
 
 async def authorize() -> str:
-    print('Авторизуйтесь в открывшемся окне браузера...')
-    url = (
-        f'https://account.ely.by/oauth2/v1'
-        f'?client_id={CLIENT_ID}'
-        f'&redirect_uri={REDIRECT_URI}'
-        f'&response_type=code'
-        f'&scope=account_info%20minecraft_server_session'
-        f'&prompt=select_account'
-    )
-    print(f'Или откройте ссылку вручную: {url}')
-    webbrowser.open(url)
-
     code: str | None = None
 
     async def handle(request: Request) -> Response:
@@ -34,23 +23,46 @@ async def authorize() -> str:
         if 'code' not in request.query_params:
             return Response('"code" query param missing', 400)
         try:
-            code = await exchange_code(request.query_params['code'])
+            code = await exchange_code(request.query_params['code'], redirect_uri)
         except InvalidCodeError:
             return Response('Неверный код', 400)
         server.should_exit = True
         return RedirectResponse(
-            'https://account.ely.by/oauth2/code/success?appName=DVA SMP', 302
+            f'https://account.ely.by/oauth2/code/success?appName={APP_NAME}', 302
         )
 
     app = Starlette(
         routes=[
-            Route('/callback', handle),
+            Route('/', handle),
         ]
     )
 
-    server_config = uvicorn.Config(app, port=LISTEN_PORT, log_level=logging.WARNING)
+    server_config = uvicorn.Config(app, port=0, log_level=logging.WARNING)
     server = uvicorn.Server(config=server_config)
-    await server.serve()
+    
+    thread = threading.Thread(target=server.run)
+    thread.start()
+    
+    while not server.started:
+        pass
+
+    port = server.servers[0].sockets[0].getsockname()[1]
+    redirect_uri = f'{REDIRECT_URI_BASE}:{port}/'
+
+    print('Авторизуйтесь в открывшемся окне браузера...')
+    url = (
+        f'https://account.ely.by/oauth2/v1'
+        f'?client_id={CLIENT_ID}'
+        f'&redirect_uri={redirect_uri}'
+        f'&response_type=code'
+        f'&scope=account_info%20minecraft_server_session'
+        f'&prompt=select_account'
+    )
+    print(f'Или откройте ссылку вручную: {url}')
+    webbrowser.open(url)
+    
+    while not server.should_exit:
+        time.sleep(0.01)
 
     if not code:
         raise ValueError('Server stopped before receiving the code')
@@ -62,14 +74,14 @@ class InvalidCodeError(ValueError):
     ...
 
 
-async def exchange_code(code: str) -> str:
+async def exchange_code(code: str, redirect_uri: str) -> str:
     client = httpx.AsyncClient()
     token_response = await client.post(
         "https://account.ely.by/api/oauth2/v1/token",
         data={
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
             "code": code,
         },

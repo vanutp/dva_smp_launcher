@@ -1,3 +1,5 @@
-CLIENT_ID = "dvasmp1"
-CLIENT_SECRET = "ICLLyGfzhLCyHhAiH5kmcL4QOt7N7RNrQbDkrUE1kB5GOu_EPo503iz3nsiZ34mq"
-SERVER_BASE = "https://mc.vanutp.dev/"
+CLIENT_ID = "potato-launcher"
+CLIENT_SECRET = "ui5ULhQlactyntldzSk6JAeUZfA-aVej_XAeu_BIQPTihzEJdsjpfaxH5yGKbN0A"
+SERVER_BASE = "https://mc.petr1furious.me/"
+LAUNCHER_NAME = "potato_launcher"
+APP_NAME = "potato_launcher"

@@ -20,7 +20,7 @@ def is_frozen():
 
 
 def chmod_x(path):
-    if islinux():
+    if islinux() or ismac():
         path = str(path)
         os.chmod(path, os.stat(path).st_mode | 0o111)
 
