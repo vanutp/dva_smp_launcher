@@ -15,22 +15,31 @@ class LoginStartResponse:
 
 
 class TGAuthProvider(AuthProvider):
-    def __init__(self, base_url: str, bot_name: str):
+    _bot_name: str | None
+
+    def __init__(self, base_url: str):
         self.client = AsyncClient(base_url=base_url)
-        self.bot_name = bot_name
+        self._bot_name = None
+
+    async def get_bot_name(self) -> str:
+        if self._bot_name is None:
+            self._bot_name = (await self.client.get('/info')).json()['bot_username']
+        return self._bot_name
 
     async def authenticate(self) -> str:
+        bot_name = await self.get_bot_name()
+
         start_resp = await self.client.post('/login/start')
         start_resp.raise_for_status()
         start_resp = LoginStartResponse(**start_resp.json())
-        tg_deeplink = f'https://t.me/{self.bot_name}?start={start_resp.code}'
+        tg_deeplink = f'https://t.me/{bot_name}?start={start_resp.code}'
         webbrowser.open(tg_deeplink)
         print('Нажмите start в боте')
         print('Или отсканируйте QR код:')
         qr = QRCode()
         qr.add_data(tg_deeplink)
         qr.print_ascii(tty=True)
-        print(f'Или введите код в бота @{self.bot_name} вручную: {start_resp.code}')
+        print(f'Или введите код в бота @{bot_name} вручную: {start_resp.code}')
 
         done = False
         while not done:

@@ -22,12 +22,10 @@ class AuthProvider(ABC):
 
     @staticmethod
     def get() -> 'AuthProvider':
-        if (tgauth_base := getattr(build_cfg, 'TGAUTH_BASE', None)) and (
-            bot_name := getattr(build_cfg, 'TGAUTH_BOT_NAME', None)
-        ):
+        if tgauth_base := getattr(build_cfg, 'TGAUTH_BASE', None):
             from .tgauth import TGAuthProvider
 
-            return TGAuthProvider(tgauth_base, bot_name)
+            return TGAuthProvider(tgauth_base)
         elif (
             (client_id := getattr(build_cfg, 'ELYBY_CLIENT_ID', None))
             and (client_secret := getattr(build_cfg, 'ELYBY_CLIENT_SECRET', None))
