@@ -5,7 +5,9 @@ from subprocess import Popen
 
 from rich import print
 
+import build_cfg
 from src.auth import AuthenticatedUser, AuthProvider, ElyByProvider
+from src.auth.tgauth import TGAuthProvider
 from src.compat import iswin, ismac
 from src.config import Config, get_minecraft_dir
 from src.errors import LauncherError
@@ -106,10 +108,17 @@ async def launch(
         '-Dfile.encoding=UTF-8',
         *shlex.split(config.java_options),
     ]
-    if isinstance(AuthProvider.get(), ElyByProvider):
+
+    auth_provider = AuthProvider.get()
+    if isinstance(auth_provider, ElyByProvider):
         java_options.insert(
             0, f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}=ely.by'
         )
+    elif isinstance(auth_provider, TGAuthProvider):
+        java_options.insert(
+            0, f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}={build_cfg.TGAUTH_BASE}'
+        )
+
     for arg in modpack_index.java_args:
         if not isinstance(arg['value'], list):
             arg['value'] = [arg['value']]

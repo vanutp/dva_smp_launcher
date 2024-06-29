@@ -73,7 +73,7 @@ class ElyByProvider(AuthProvider):
                 'Authorization': f'Bearer {token}',
             },
         )
-        if resp.status_code == 401:
+        if resp.status_code in [401, 403]:
             raise UnauthorizedException()
         resp.raise_for_status()
         data = resp.json()
