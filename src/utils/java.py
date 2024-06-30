@@ -60,7 +60,9 @@ def check_java(path: JavaInstall | str | Path) -> JavaInstall | None:
 
 
 def is_good_version(required_version: str, java: JavaInstall) -> bool:
-    return java.version == required_version or java.version.startswith(f'{required_version}.')
+    return java.version == required_version or java.version.startswith(
+        f'{required_version}.'
+    )
 
 
 def find_java_in_registry(
@@ -93,7 +95,7 @@ def find_java_in_registry(
         except OSError:
             pass
         else:
-            exe_path = os.path.join(java_dir_value, 'bin', 'javaw.exe')
+            exe_path = os.path.join(java_dir_value, 'bin', 'java.exe')
             res.append(JavaInstall(version=subkey, path=exe_path))
         finally:
             CloseKey(key)
@@ -190,8 +192,22 @@ def validate_user_java(required_version: str, path: str):
         )
     return True
 
-def ask_user_java(required_version: str, default: str = None) -> (JavaInstall | None):
-    user_java = ask('Полный путь к java (javaw.exe на Windows)', validate=lambda path: validate_user_java(required_version, path), default=default)
+
+def fix_java_path(path: str) -> str:
+    if path.endswith('javaw.exe'):
+        return path.removesuffix('javaw.exe') + 'java.exe'
+    else:
+        return path
+
+
+def ask_user_java(required_version: str, default: str = None) -> JavaInstall | None:
+    java_filename = 'java.exe' if iswin() else 'java'
+    user_java = ask(
+        f'Полный путь к {java_filename}',
+        validate=lambda path: validate_user_java(required_version, path),
+        default=default,
+    )
+    user_java = fix_java_path(user_java)
     return check_java(user_java)
 
 
@@ -219,4 +235,4 @@ def find_java(required_version: str) -> str:
     return res[0].path
 
 
-__all__ = ['find_java', 'check_java', 'ask_user_java']
+__all__ = ['find_java', 'check_java', 'ask_user_java', 'fix_java_path']

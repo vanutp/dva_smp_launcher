@@ -1,14 +1,14 @@
 import asyncio
 import os.path
 import shlex
-from subprocess import Popen
+from subprocess import Popen, PIPE, STDOUT
 
 from rich import print
 
 import build_cfg
 from src.auth import AuthenticatedUser, AuthProvider, ElyByProvider
 from src.auth.tgauth import TGAuthProvider
-from src.compat import iswin, ismac
+from src.compat import iswin, ismac, win_pipe_nowait
 from src.config import Config, get_minecraft_dir
 from src.errors import LauncherError
 from src.utils.modpack import ModpackIndex, get_assets_dir
@@ -144,7 +144,21 @@ async def launch(
         modpack_index.main_class,
         *minecraft_options,
     ]
-    p = Popen(command, start_new_session=True, cwd=str(mc_dir))
+
+    kwargs = {}
+    if iswin():
+        flags = 0
+        flags |= 0x00000008  # DETACHED_PROCESS
+        # idk if this is needed
+        flags |= 0x00000200  # CREATE_NEW_PROCESS_GROUP
+        kwargs['creationflags'] = flags
+        kwargs['stdout'] = PIPE
+        kwargs['stderr'] = STDOUT
+
+    p = Popen(command, start_new_session=True, cwd=str(mc_dir), **kwargs)
     await asyncio.sleep(3)
     if (return_code := p.poll()) is not None:
+        if iswin():
+            win_pipe_nowait(p.stdout.fileno())
+            print(p.stdout.read().decode())
         raise LauncherError(f'Процесс майнкрафта завершился слишком быстро... Код завершения: {return_code}')

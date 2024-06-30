@@ -6,6 +6,7 @@ from json import JSONDecodeError
 from platformdirs import PlatformDirs
 
 from build_cfg import DATA_DIR_NAME
+from src.utils.java import fix_java_path
 
 
 @dataclass
@@ -19,7 +20,9 @@ class Config:
 
 
 def get_dirs():
-    return PlatformDirs(DATA_DIR_NAME, appauthor=False, ensure_exists=True, roaming=True)
+    return PlatformDirs(
+        DATA_DIR_NAME, appauthor=False, ensure_exists=True, roaming=True
+    )
 
 
 def get_config_path():
@@ -46,6 +49,7 @@ def load_config() -> Config:
     res = Config(**data)
     if isinstance(res.java_path, str):
         res.java_path = {res.modpack: res.java_path}
+    res.java_path = {name: fix_java_path(path) for name, path in res.java_path.items()}
     if not (
         isinstance(res.token, str)
         and isinstance(res.java_path, dict)

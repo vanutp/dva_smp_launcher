@@ -57,11 +57,24 @@ def perform_forbidden_nixery():
     os.environ['LD_LIBRARY_PATH'] = ':'.join(ld_library_path)
 
 
-__all__ = [
-    'iswin',
-    'islinux',
-    'ismac',
-    'is_frozen',
-    'chmod_x',
-    'perform_forbidden_nixery',
-]
+def win_pipe_nowait(pipefd):
+    if not iswin():
+        raise ValueError('Tried to run win_pipe_nowait on a non-windows system')
+
+    # https://stackoverflow.com/questions/34504970/non-blocking-read-on-os-pipe-on-windows
+    import msvcrt
+    from ctypes import windll, byref, wintypes, WinError
+    from ctypes.wintypes import HANDLE, LPDWORD, BOOL
+
+    PIPE_NOWAIT = wintypes.DWORD(0x00000001)
+
+    SetNamedPipeHandleState = windll.kernel32.SetNamedPipeHandleState
+    SetNamedPipeHandleState.argtypes = [HANDLE, LPDWORD, LPDWORD, LPDWORD]
+    SetNamedPipeHandleState.restype = BOOL
+
+    h = msvcrt.get_osfhandle(pipefd)
+
+    res = windll.kernel32.SetNamedPipeHandleState(h, byref(PIPE_NOWAIT), None, None)
+    if res == 0:
+        raise WinError()
+    return True
