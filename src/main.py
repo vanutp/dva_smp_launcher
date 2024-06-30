@@ -8,6 +8,7 @@ from rich import print
 from src import tui
 from src.auth import AuthenticatedUser, AuthProvider
 from src.auth.base import UnauthorizedException
+from src.compat import perform_forbidden_nixery
 from src.config import load_config, save_config, Config
 from src.errors import LauncherError
 from src.launcher import launch
@@ -123,6 +124,8 @@ async def _main():
         config.modpack = await select_modpack(indexes)
         print(config.modpack)
         save_config(config)
+
+    perform_forbidden_nixery()
 
     await main_menu(indexes, user_info, config)
 
