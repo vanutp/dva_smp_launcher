@@ -146,5 +146,5 @@ async def launch(
     ]
     p = Popen(command, start_new_session=True, cwd=str(mc_dir))
     await asyncio.sleep(3)
-    if p.poll() is not None:
-        raise LauncherError('Процесс майнкрафта завершился слишком быстро...')
+    if (return_code := p.poll()) is not None:
+        raise LauncherError(f'Процесс майнкрафта завершился слишком быстро... Код завершения: {return_code}')
