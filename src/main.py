@@ -1,5 +1,6 @@
 import asyncio
 import string
+import sys
 import traceback
 
 import inquirer.errors
@@ -15,7 +16,12 @@ from src.launcher import launch
 from src.tui import ensure_tty, ask, clear
 from src.update import update_if_required
 from src.utils.java import find_java, ask_user_java
-from src.utils.modpack import sync_modpack, ModpackNotFoundError, load_indexes, ModpackIndex
+from src.utils.modpack import (
+    sync_modpack,
+    ModpackNotFoundError,
+    load_indexes,
+    ModpackIndex,
+)
 
 
 def validate_memory(mem: str):
@@ -32,19 +38,43 @@ async def select_modpack(indexes: list[ModpackIndex]):
     )
 
 
-async def main_menu(indexes: list[ModpackIndex], user_info: AuthenticatedUser, config: Config):
+async def sync_and_launch(user_info: AuthenticatedUser, config: Config, *, _is_retry: bool = False):
+    clear()
+    try:
+        modpack_index = await sync_modpack(config)
+    except ModpackNotFoundError as e:
+        if _is_retry:
+            raise e
+        indexes = await load_indexes()
+        config.modpack = await select_modpack(indexes)
+        await sync_and_launch(user_info, config, _is_retry=True)
+    else:
+        await launch(modpack_index, user_info, config)
+
+
+async def main_menu(
+    indexes: list[ModpackIndex], user_info: AuthenticatedUser, config: Config
+):
     print('Загрузка...', end='', flush=True)
     while True:
         clear()
         print(f'Вы вошли как [green]{user_info.username}[/green]')
-        select_modpack_entry = [(f'Изменить сборку (выбрана {config.modpack})', 'change_modpack')] if len(indexes) > 1 else []
+        select_modpack_entry = (
+            [(f'Изменить сборку (выбрана {config.modpack})', 'change_modpack')]
+            if len(indexes) > 1
+            else []
+        )
 
-        selected_modpack_index = next((x for x in indexes if x.modpack_name == config.modpack), None)
+        selected_modpack_index = next(
+            (x for x in indexes if x.modpack_name == config.modpack), None
+        )
         if not selected_modpack_index:
             raise ValueError('Selected modpack not found in indexes')
 
         required_java_version = selected_modpack_index.java_version
-        if not (config.modpack in config.java_path and config.java_path[config.modpack]):
+        if not (
+            config.modpack in config.java_path and config.java_path[config.modpack]
+        ):
             config.java_path[config.modpack] = find_java(required_java_version)
             save_config(config)
         java_path = config.java_path[config.modpack]
@@ -68,19 +98,14 @@ async def main_menu(indexes: list[ModpackIndex], user_info: AuthenticatedUser, c
             ],
         )
         if answer == 'start':
-            clear()
-            try:
-                modpack_index = await sync_modpack(config)
-            except ModpackNotFoundError:
-                indexes = await load_indexes()
-                config.modpack = await select_modpack(indexes)
-            else:
-                await launch(modpack_index, user_info, config)
-                break
+            await sync_and_launch(user_info, config)
+            break
         elif answer == 'change_modpack':
             config.modpack = await select_modpack(indexes)
         elif answer == 'java_path':
-            config.java_path[config.modpack] = ask_user_java(required_java_version, java_path).path
+            config.java_path[config.modpack] = ask_user_java(
+                required_java_version, java_path
+            ).path
         elif answer == 'xmx':
             config.xmx = int(
                 ask(
@@ -122,12 +147,14 @@ async def _main():
     indexes = await load_indexes()
     if not config.modpack or not any(x.modpack_name == config.modpack for x in indexes):
         config.modpack = await select_modpack(indexes)
-        print(config.modpack)
         save_config(config)
 
     perform_forbidden_nixery()
 
-    await main_menu(indexes, user_info, config)
+    if '--launch' in sys.argv:
+        await sync_and_launch(user_info, config)
+    else:
+        await main_menu(indexes, user_info, config)
 
 
 def main():
