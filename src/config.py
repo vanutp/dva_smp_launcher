@@ -43,17 +43,15 @@ def load_config() -> Config:
     except JSONDecodeError:
         return Config()
 
-    try:
-        res = Config(**data)
-        if not (
-            isinstance(res.token, str)
-            and isinstance(res.java_path, dict)
-            and isinstance(res.assets_dir, str)
-            and isinstance(res.xmx, int)
-        ):
-            return Config()
-    except TypeError as e:
-        print(e)
+    res = Config(**data)
+    if isinstance(res.java_path, str):
+        res.java_path = {res.modpack: res.java_path}
+    if not (
+        isinstance(res.token, str)
+        and isinstance(res.java_path, dict)
+        and isinstance(res.assets_dir, str)
+        and isinstance(res.xmx, int)
+    ):
         return Config()
 
     return res
