@@ -46,7 +46,7 @@ def perform_forbidden_nixery():
     pkg_names = ' '.join(pkg_names)
     pkgs = json.loads(
         subprocess.check_output(
-            f'nix eval --json nixpkgs#legacyPackages.x86_64-linux --apply "pkgs: with pkgs; [{pkg_names}]"',
+            f'nix eval --json nixpkgs#legacyPackages.x86_64-linux --apply "pkgs: with pkgs; [{pkg_names}]" --extra-experimental-features nix-command --extra-experimental-features flakes',
             shell=True,
         ).decode()
     )
