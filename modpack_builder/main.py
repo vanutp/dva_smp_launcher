@@ -57,6 +57,7 @@ def exec_custom_cmd(cmd: list[str] | str | None):
     if cmd:
         subprocess.check_call(cmd, shell=True)
 
+
 class ModpackSpec(BaseModel):
     exec_before: str | None = None
     exec_after: str | None = None
@@ -66,7 +67,6 @@ class ModpackSpec(BaseModel):
     modpack_name: str
     java_version: str
     clean_forge_libs_path: Path | None
-    forge_libs_list: list[str] | None
 
 
 class ModpackIndex(BaseModel):
@@ -75,7 +75,7 @@ class ModpackIndex(BaseModel):
     version: str
     asset_index: str
     main_class: str
-    classpath: list[str] | None
+    libraries: list[dict]
     java_args: list[dict]
     game_args: list[dict]
     include: list[str]
@@ -249,7 +249,7 @@ class ModpackGenerator:
             version=self.version_data['jar'],
             asset_index=self.version_data['assetIndex']['id'],
             main_class=self.version_data['mainClass'],
-            classpath=self.spec.forge_libs_list,
+            libraries=self.version_data['libraries'],
             java_args=self.version_data['arguments']['jvm'],
             game_args=self.version_data['arguments']['game'],
             include=[
@@ -299,7 +299,9 @@ async def main():
         if args.only and modpack.modpack_name != args.only:
             continue
         print(f'Generating {modpack.modpack_name}')
-        indexes[modpack.modpack_name] = (await ModpackGenerator(modpack).generate()).model_dump(mode='json')
+        indexes[modpack.modpack_name] = (
+            await ModpackGenerator(modpack).generate()
+        ).model_dump(mode='json')
         print('Done')
 
     with open(index_path, 'w') as f:
