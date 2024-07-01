@@ -2,6 +2,7 @@ import dataclasses
 import json
 from dataclasses import dataclass
 from json import JSONDecodeError
+from pathlib import Path
 
 from platformdirs import PlatformDirs
 
@@ -14,6 +15,7 @@ class Config:
     token: str = ''
     java_path: dict[str, str] = dataclasses.field(default_factory=dict)
     assets_dir: str = ''
+    data_dir: str = ''
     xmx: int = 3072
     modpack: str = ''
 
@@ -28,10 +30,18 @@ def get_config_path():
     return get_dirs().user_config_path / 'config.json'
 
 
-def get_minecraft_dir(modpack_name: str):
-    res = get_dirs().user_data_path / 'modpacks' / modpack_name
+def get_data_dir(config: Config) -> Path:
+    return Path(config.data_dir or get_dirs().user_data_path)
+
+
+def get_minecraft_dir(config: Config, modpack_name: str) -> Path:
+    res = get_data_dir(config) / 'modpacks' / modpack_name
     res.mkdir(parents=True, exist_ok=True)
     return res
+
+
+def get_assets_dir(config: Config) -> Path:
+    return Path(config.assets_dir or (get_data_dir(config) / 'assets'))
 
 
 def load_config() -> Config:
@@ -55,6 +65,7 @@ def load_config() -> Config:
         isinstance(res.token, str)
         and isinstance(res.java_path, dict)
         and isinstance(res.assets_dir, str)
+        and isinstance(res.data_dir, str)
         and isinstance(res.xmx, int)
     ):
         return Config()
@@ -67,4 +78,10 @@ def save_config(config: Config) -> None:
         json.dump(dataclasses.asdict(config), f, indent=2)
 
 
-__all__ = ['Config', 'load_config', 'save_config', 'get_minecraft_dir']
+__all__ = [
+    'Config',
+    'load_config',
+    'save_config',
+    'get_minecraft_dir',
+    'get_assets_dir',
+]

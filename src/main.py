@@ -87,6 +87,10 @@ async def main_menu(
                 (f'Путь к Java ({java_path or "Не задан"})', 'java_path'),
                 (f'Выделенная память ({config.xmx} МиБ)', 'xmx'),
                 (
+                    f'Путь к данным игры ({config.data_dir or "По умолчанию"})',
+                    'data_dir',
+                ),
+                (
                     f'Путь к ассетам ({config.assets_dir or "По умолчанию"})',
                     'assets_dir',
                 ),
@@ -109,6 +113,11 @@ async def main_menu(
                     validate=validate_memory,
                     default=str(config.xmx),
                 )
+            )
+        elif answer == 'data_dir':
+            config.data_dir = ask(
+                'Путь к данным игры',
+                default=str(config.data_dir),
             )
         elif answer == 'assets_dir':
             config.assets_dir = ask(

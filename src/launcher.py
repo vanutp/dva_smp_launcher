@@ -73,10 +73,10 @@ def library_name_to_path(full_name: str) -> str:
 
 
 async def launch(
-        modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
+    modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
 ):
     print('[green]Запуск![/green]', flush=True)
-    mc_dir = get_minecraft_dir(modpack_index.modpack_name)
+    mc_dir = get_minecraft_dir(config, modpack_index.modpack_name)
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
     classpath = []

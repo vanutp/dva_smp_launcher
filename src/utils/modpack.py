@@ -8,7 +8,7 @@ import rich
 from rich.progress import track, Progress
 
 from build_cfg import SERVER_BASE
-from src.config import get_minecraft_dir, Config, get_dirs
+from src.config import get_minecraft_dir, get_assets_dir, Config
 from src.errors import LauncherError
 
 
@@ -40,10 +40,6 @@ class ModpackIndex:
     client_filename: str
 
 
-def get_assets_dir(config: Config):
-    return Path(config.assets_dir or (get_dirs().user_data_path / 'assets'))
-
-
 async def load_indexes() -> list[ModpackIndex]:
     index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}index.json')
     index_resp.raise_for_status()
@@ -70,7 +66,7 @@ async def sync_modpack(config: Config) -> ModpackIndex:
         raise ModpackNotFoundError()
     index = indexes[0]
 
-    mc_dir = get_minecraft_dir(index.modpack_name)
+    mc_dir = get_minecraft_dir(config, index.modpack_name)
     assets_dir = get_assets_dir(config)
 
     # [(is_asset, relative_path)]
