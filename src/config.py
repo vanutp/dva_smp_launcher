@@ -15,7 +15,6 @@ class Config:
     java_path: dict[str, str] = dataclasses.field(default_factory=dict)
     assets_dir: str = ''
     xmx: int = 3072
-    java_options: str = ''
     modpack: str = ''
 
 

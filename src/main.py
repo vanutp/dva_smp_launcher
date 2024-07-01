@@ -90,10 +90,6 @@ async def main_menu(
                     f'Путь к ассетам ({config.assets_dir or "По умолчанию"})',
                     'assets_dir',
                 ),
-                (
-                    f'Дополнительные опции Java {f"({config.java_options})" if config.java_options else ""}',
-                    'java_options',
-                ),
                 ('Выход', 'exit'),
             ],
         )
@@ -118,11 +114,6 @@ async def main_menu(
             config.assets_dir = ask(
                 'Путь к ассетам',
                 default=str(config.assets_dir),
-            )
-        elif answer == 'java_options':
-            config.java_options = ask(
-                'Дополнительные опции Java',
-                default=config.java_options,
             )
         elif answer == 'exit':
             break

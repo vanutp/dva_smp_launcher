@@ -115,7 +115,6 @@ async def launch(
         f'-Xmx{config.xmx}M',
         '-Duser.language=en',
         '-Dfile.encoding=UTF-8',
-        *shlex.split(config.java_options),
     ]
 
     auth_provider = AuthProvider.get()
