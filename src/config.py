@@ -45,6 +45,8 @@ def load_config() -> Config:
     except JSONDecodeError:
         return Config()
 
+    if 'java_options' in data:
+        del data['java_options']
     res = Config(**data)
     if isinstance(res.java_path, str):
         res.java_path = {res.modpack: res.java_path}
