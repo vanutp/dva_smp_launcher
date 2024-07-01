@@ -1,8 +1,6 @@
 import asyncio
-import builtins
 import os.path
 import shlex
-import sys
 from subprocess import Popen, PIPE, STDOUT
 
 from rich import print
@@ -62,7 +60,6 @@ def apply_arg(arg: dict) -> bool:
 def replace_launch_config_variables(argument: str, variables: dict[str, str]):
     for k, v in variables.items():
         argument = argument.replace('${' + k + '}', v)
-    print(argument)
     return argument
 
 
@@ -76,7 +73,7 @@ def library_name_to_path(full_name: str) -> str:
 
 
 async def launch(
-    modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
+        modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
 ):
     print('[green]Запуск![/green]', flush=True)
     mc_dir = get_minecraft_dir(modpack_index.modpack_name)
@@ -133,7 +130,6 @@ async def launch(
         )
 
     for arg in modpack_index.java_args:
-        print(arg)
         if not isinstance(arg['value'], list):
             arg['value'] = [arg['value']]
 
@@ -168,16 +164,6 @@ async def launch(
         kwargs['creationflags'] = flags
         kwargs['stdout'] = PIPE
         kwargs['stderr'] = STDOUT
-
-    print(command)
-
-    def audithook(e, args):
-        if e != 'subprocess.Popen':
-            return
-        builtins.print(f'Audit hook: {e}')
-        builtins.print(*args, sep='\n')
-        builtins.print('----')
-    sys.addaudithook(audithook)
 
     p = Popen(command, start_new_session=True, cwd=str(mc_dir), **kwargs)
     await asyncio.sleep(3)
