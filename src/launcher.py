@@ -10,7 +10,7 @@ from rich import print
 import build_cfg
 from src.auth import AuthenticatedUser, AuthProvider, ElyByProvider
 from src.auth.tgauth import TGAuthProvider
-from src.compat import iswin, ismac, win_pipe_nowait
+from src.compat import iswin, ismac, win_pipe_nowait, islinux
 from src.config import Config, get_minecraft_dir
 from src.errors import LauncherError
 from src.utils.modpack import ModpackIndex, get_assets_dir
@@ -31,7 +31,7 @@ GC_OPTIONS = [
 
 
 def apply_arg(arg: dict) -> bool:
-    if arg['value'] == ['-Dos.name=Windows 10', '-Dos.version=10.0']:
+    if arg.get('value') == ['-Dos.name=Windows 10', '-Dos.version=10.0']:
         return False
 
     if 'rules' not in arg:
@@ -51,6 +51,8 @@ def apply_arg(arg: dict) -> bool:
             return True
         elif os_name == 'osx' and ismac():
             return True
+        elif os_name == 'linux' and islinux():
+            return True
     elif 'features' in rules:
         if rules['features'].get('has_custom_resolution', False):
             return True
@@ -63,6 +65,15 @@ def replace_launch_config_variables(argument: str, variables: dict[str, str]):
     return argument
 
 
+def library_name_to_path(full_name: str) -> str:
+    if full_name.count(':') != 3:
+        full_name += ':'
+    pkg, name, version, suffix = full_name.split(':')
+    pkg = pkg.replace('.', '/')
+    suffix = '-' + suffix if suffix else ''
+    return f'libraries/{pkg}/{name}/{version}/{name}-{version}{suffix}.jar'
+
+
 async def launch(
     modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
 ):
@@ -70,14 +81,13 @@ async def launch(
     mc_dir = get_minecraft_dir(modpack_index.modpack_name)
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
-    if modpack_index.classpath:
-        classpath = [str(mc_dir / x) for x in modpack_index.classpath]
-    else:
-        classpath = [
-            str(mc_dir / x)
-            for x in modpack_index.objects
-            if x.split('/')[0] == 'libraries'
-        ]
+    classpath = []
+    for arg in modpack_index.libraries:
+        if arg.get('downloadOnly'):
+            continue
+        if apply_arg(arg):
+            classpath.append(str(mc_dir / library_name_to_path(arg['name'])))
+        print(arg['name'])
     classpath.append(str(mc_dir / modpack_index.client_filename))
 
     variables = {
@@ -118,7 +128,8 @@ async def launch(
         )
     elif isinstance(auth_provider, TGAuthProvider):
         java_options.insert(
-            0, f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}={build_cfg.TGAUTH_BASE}'
+            0,
+            f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}={build_cfg.TGAUTH_BASE}',
         )
 
     for arg in modpack_index.java_args:
@@ -158,6 +169,8 @@ async def launch(
         kwargs['stderr'] = STDOUT
 
     def audithook(e, args):
+        if e != 'subprocess.Popen':
+            return
         builtins.print(f'Audit hook: {e}')
         builtins.print(*args, sep='\n')
         builtins.print('----')
@@ -169,4 +182,6 @@ async def launch(
         if iswin():
             win_pipe_nowait(p.stdout.fileno())
             print(p.stdout.read().decode())
-        raise LauncherError(f'Процесс майнкрафта завершился слишком быстро... Код завершения: {return_code}')
+        raise LauncherError(
+            f'Процесс майнкрафта завершился слишком быстро... Код завершения: {return_code}'
+        )
