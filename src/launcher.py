@@ -62,6 +62,7 @@ def apply_arg(arg: dict) -> bool:
 def replace_launch_config_variables(argument: str, variables: dict[str, str]):
     for k, v in variables.items():
         argument = argument.replace('${' + k + '}', v)
+    print(argument)
     return argument
 
 
@@ -87,7 +88,6 @@ async def launch(
             continue
         if apply_arg(arg):
             classpath.append(str(mc_dir / library_name_to_path(arg['name'])))
-        print(arg['name'])
     classpath.append(str(mc_dir / modpack_index.client_filename))
 
     variables = {
@@ -133,6 +133,7 @@ async def launch(
         )
 
     for arg in modpack_index.java_args:
+        print(arg)
         if not isinstance(arg['value'], list):
             arg['value'] = [arg['value']]
 
@@ -167,6 +168,8 @@ async def launch(
         kwargs['creationflags'] = flags
         kwargs['stdout'] = PIPE
         kwargs['stderr'] = STDOUT
+
+    print(command)
 
     def audithook(e, args):
         if e != 'subprocess.Popen':
