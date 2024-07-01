@@ -35,18 +35,9 @@ async def update_required():
     return new_hash != current_hash
 
 
-async def update_if_required():
-    if len(sys.argv) == 3 and sys.argv[1] == 'updated':
-        Path(sys.argv[2]).unlink()
-        return
-    if not await update_required():
-        return
-
-    current_file = Path(sys.executable)
-    new_file_name = current_file.with_stem(current_file.stem + '_upd')
-
+async def download_update(file_path: Path):
     client = httpx.AsyncClient()
-    with open(new_file_name, 'wb') as f:
+    with open(file_path, 'wb') as f:
         async with client.stream('GET', get_update_url()) as resp:
             total = int(resp.headers['Content-Length'])
             with Progress() as progress:
@@ -55,12 +46,31 @@ async def update_if_required():
                     f.write(chunk)
                     progress.update(t, completed=resp.num_bytes_downloaded)
 
-    renamed_current_file = current_file.with_stem(current_file.stem + '_old')
-    current_file.rename(renamed_current_file)
-    new_file_name.rename(current_file)
-    chmod_x(current_file)
 
-    os.execl(sys.executable, sys.executable, 'updated', renamed_current_file)
+async def update_if_required():
+    if len(sys.argv) == 3 and sys.argv[1] == 'updated':
+        Path(sys.argv[2]).unlink()
+        return
+    if not await update_required():
+        return
+
+    current_file = Path(sys.executable)
+    old_file_name = current_file.with_stem(current_file.stem + '_old')
+
+    if iswin():
+        # windows defender doesn't like renaming a file immediately
+        # after downloading, so downloading directly to final path
+        current_file.rename(old_file_name)
+        await download_update(current_file)
+    else:
+        # using safer approach on sane oses
+        upd_file_name = current_file.with_stem(current_file.stem + '_upd')
+        await download_update(upd_file_name)
+        current_file.rename(old_file_name)
+        upd_file_name.rename(current_file)
+
+    chmod_x(current_file)
+    os.execl(sys.executable, sys.executable, 'updated', old_file_name)
 
 
 __all__ = ['update_if_required']
