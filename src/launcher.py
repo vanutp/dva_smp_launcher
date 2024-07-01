@@ -1,6 +1,8 @@
 import asyncio
+import builtins
 import os.path
 import shlex
+import sys
 from subprocess import Popen, PIPE, STDOUT
 
 from rich import print
@@ -154,6 +156,12 @@ async def launch(
         kwargs['creationflags'] = flags
         kwargs['stdout'] = PIPE
         kwargs['stderr'] = STDOUT
+
+    def audithook(e, args):
+        builtins.print(f'Audit hook: {e}')
+        builtins.print(*args, sep='\n')
+        builtins.print('----')
+    sys.addaudithook(audithook)
 
     p = Popen(command, start_new_session=True, cwd=str(mc_dir), **kwargs)
     await asyncio.sleep(3)
