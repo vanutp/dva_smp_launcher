@@ -8,11 +8,13 @@ from platformdirs import PlatformDirs
 
 from build_cfg import DATA_DIR_NAME
 from src.utils.java import fix_java_path
+from src.auth import AuthenticatedUser
 
 
 @dataclass
 class Config:
     token: str = ''
+    user_info: AuthenticatedUser = dataclasses.field(default_factory=AuthenticatedUser)
     java_path: dict[str, str] = dataclasses.field(default_factory=dict)
     assets_dir: str = ''
     data_dir: str = ''
@@ -40,6 +42,10 @@ def get_minecraft_dir(config: Config, modpack_name: str) -> Path:
     return res
 
 
+def get_index_path(config: Config) -> Path:
+    return get_data_dir(config) / 'modpacks' / 'index.json'
+
+
 def get_assets_dir(config: Config) -> Path:
     return Path(config.assets_dir or (get_data_dir(config) / 'assets'))
 
@@ -61,13 +67,18 @@ def load_config() -> Config:
     if isinstance(res.java_path, str):
         res.java_path = {res.modpack: res.java_path}
     res.java_path = {name: fix_java_path(path) for name, path in res.java_path.items()}
+    
+    if isinstance(res.user_info, dict):
+        res.user_info = AuthenticatedUser(**res.user_info)
+
     if not (
-        isinstance(res.token, str)
+        isinstance(res.user_info, AuthenticatedUser)
         and isinstance(res.java_path, dict)
         and isinstance(res.assets_dir, str)
         and isinstance(res.data_dir, str)
         and isinstance(res.xmx, int)
     ):
+        print(res.user_info)
         return Config()
 
     return res

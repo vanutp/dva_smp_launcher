@@ -5,6 +5,7 @@ import traceback
 
 import inquirer.errors
 from rich import print
+import httpx
 
 from src import tui
 from src.auth import AuthenticatedUser, AuthProvider
@@ -17,9 +18,10 @@ from src.tui import ensure_tty, ask, clear
 from src.update import update_if_required
 from src.utils.java import find_java, ask_user_java
 from src.utils.modpack import (
+    get_modpack,
     sync_modpack,
-    ModpackNotFoundError,
-    load_indexes,
+    load_remote_indexes,
+    load_local_indexes,
     ModpackIndex,
 )
 
@@ -30,7 +32,9 @@ def validate_memory(mem: str):
     return True
 
 
-async def select_modpack(indexes: list[ModpackIndex]):
+def select_modpack(indexes: list[ModpackIndex]) -> str:
+    if not indexes:
+        raise LauncherError('Список сборок пуст')
     if len(indexes) == 1:
         return indexes[0].modpack_name
     return tui.choice(
@@ -38,30 +42,51 @@ async def select_modpack(indexes: list[ModpackIndex]):
     )
 
 
-async def sync_and_launch(user_info: AuthenticatedUser, config: Config, *, _is_retry: bool = False):
+async def sync_and_launch(config: Config, online: bool):
     clear()
-    try:
-        modpack_index = await sync_modpack(config)
-    except ModpackNotFoundError as e:
-        if _is_retry:
-            raise e
-        indexes = await load_indexes()
-        config.modpack = await select_modpack(indexes)
-        await sync_and_launch(user_info, config, _is_retry=True)
-    else:
-        await launch(modpack_index, user_info, config)
+    print('Проверка версии...', flush=True)
+    modpack_index = await get_modpack(config, online)
+    if not modpack_index:
+        location_msg = 'на сервере' if online else 'локально'
+        print(
+            f'\n[red]Ошибка! Сборка не найдена {location_msg}. Нажмите Enter чтобы выбрать сборку[/red]'
+        )
+        input()
+        indexes = await load_remote_indexes() if online else load_local_indexes()
+        config.modpack = select_modpack(indexes)
+        modpack_index = await get_modpack(config, online)
+        if not modpack_index:
+            raise LauncherError('Сборка не найдена')
+
+    if online:
+        current_version = next(
+            (x.modpack_version for x in load_local_indexes(config) if x.modpack_name == modpack_index.modpack_name),
+            None,
+        )
+        remote_version = modpack_index.modpack_version
+        if not current_version or int(current_version) < int(remote_version):
+            await sync_modpack(config, modpack_index)
+
+    print('[green]Запуск![/green]', flush=True)
+    await launch(modpack_index, config, online)
 
 
-async def main_menu(
-    indexes: list[ModpackIndex], user_info: AuthenticatedUser, config: Config
-):
+async def main_menu(indexes: list[ModpackIndex], config: Config, online: bool):
     print('Загрузка...', end='', flush=True)
     while True:
         clear()
-        print(f'Вы вошли как [green]{user_info.username}[/green]')
+        online_msg = '[green](онлайн)[/green]' if online else '[red](офлайн)[/red]'
+        print(f'Вы вошли как [green]{config.user_info.username}[/green] ' + online_msg)
+
         select_modpack_entry = (
             [(f'Изменить сборку (выбрана {config.modpack})', 'change_modpack')]
             if len(indexes) > 1
+            else []
+        )
+        
+        sync_modpack_entry = (
+            [('Синхронизировать сборку', 'sync_modpack')]
+            if online
             else []
         )
 
@@ -84,6 +109,7 @@ async def main_menu(
             [
                 ('Играть', 'start'),
                 *select_modpack_entry,
+                *sync_modpack_entry,
                 (f'Путь к Java ({java_path or "Не задан"})', 'java_path'),
                 (f'Выделенная память ({config.xmx} МиБ)', 'xmx'),
                 (
@@ -98,10 +124,12 @@ async def main_menu(
             ],
         )
         if answer == 'start':
-            await sync_and_launch(user_info, config)
+            await sync_and_launch(config, online)
             break
         elif answer == 'change_modpack':
-            config.modpack = await select_modpack(indexes)
+            config.modpack = select_modpack(indexes)
+        elif answer == 'sync_modpack':
+            await sync_modpack(config, selected_modpack_index)
         elif answer == 'java_path':
             config.java_path[config.modpack] = ask_user_java(
                 required_java_version, java_path
@@ -133,28 +161,47 @@ async def _main():
     await update_if_required()
     ensure_tty()
     config = load_config()
+
+    online = True
+
     auth_provider = AuthProvider.get()
     if not config.token:
         config.token = await auth_provider.authenticate()
-        save_config(config)
     try:
-        user_info = await auth_provider.get_user(config.token)
+        config.user_info = await auth_provider.get_user(config.token)
+        save_config(config)
     except UnauthorizedException:
         config.token = await auth_provider.authenticate()
+        config.user_info = await auth_provider.get_user(config.token)
         save_config(config)
-        user_info = await auth_provider.get_user(config.token)
+    except httpx.HTTPError:
+        online = False
 
-    indexes = await load_indexes()
+    if online:
+        try:
+            indexes = await load_remote_indexes()
+        except httpx.HTTPError:
+            online = False
+    
+    if not online:
+        indexes = load_local_indexes(config)
+
+    if not indexes:
+        if online:
+            raise LauncherError('Список сборок пуст')
+        else:
+            raise LauncherError('Не удалось загрузить список сборок')
+
     if not config.modpack or not any(x.modpack_name == config.modpack for x in indexes):
-        config.modpack = await select_modpack(indexes)
+        config.modpack = select_modpack(indexes)
         save_config(config)
 
     perform_forbidden_nixery()
 
     if '--launch' in sys.argv:
-        await sync_and_launch(user_info, config)
+        await sync_and_launch(config, online)
     else:
-        await main_menu(indexes, user_info, config)
+        await main_menu(indexes, config, online)
 
 
 def main():

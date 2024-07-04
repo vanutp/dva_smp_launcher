@@ -5,8 +5,8 @@ import build_cfg
 
 @dataclass
 class AuthenticatedUser:
-    uuid: str
-    username: str
+    uuid: str = ''
+    username: str = ''
 
 
 class UnauthorizedException(Exception):

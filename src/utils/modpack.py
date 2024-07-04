@@ -1,14 +1,15 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from hashlib import sha1
 from pathlib import Path
+from typing import Any
+import json
 
 import httpx
-import rich
 from rich.progress import track, Progress
 
 from build_cfg import SERVER_BASE
-from src.config import get_minecraft_dir, get_assets_dir, Config
+from src.config import get_minecraft_dir, get_index_path, get_assets_dir, Config
 from src.errors import LauncherError
 
 
@@ -29,7 +30,8 @@ async def download_file(client: httpx.AsyncClient, url: str, path: Path) -> None
 class ModpackIndex:
     modpack_name: str
     java_version: str
-    version: str
+    minecraft_version: str
+    modpack_version: str
     asset_index: str
     main_class: str
     libraries: list[dict]
@@ -40,31 +42,46 @@ class ModpackIndex:
     client_filename: str
 
 
-async def load_indexes() -> list[ModpackIndex]:
-    index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}index.json')
+def indexes_from_data(data: Any) -> list[ModpackIndex]:
+    return [ModpackIndex(**x) for x in data]
+
+
+async def load_remote_indexes() -> list[ModpackIndex]:
+    index_resp = await httpx.AsyncClient().get(f'{SERVER_BASE}/index.json')
     index_resp.raise_for_status()
-    indexes = [ModpackIndex(**x) for x in index_resp.json()]
-    for index in indexes:
-        index.include = [Path(x) for x in index.include]
-    return indexes
+    return indexes_from_data(index_resp.json())
 
 
-class ModpackNotFoundError(Exception):
-    pass
+def load_local_indexes(config: Config) -> list[ModpackIndex]:
+    index_path = get_index_path(config)
+    if not index_path.is_file():
+        return []
+    try:
+        with open(index_path) as f:
+            return indexes_from_data(json.load(f))
+    except json.JSONDecodeError:
+        return []
 
 
-async def sync_modpack(config: Config) -> ModpackIndex:
-    print('Проверка файлов сборки...', end='', flush=True)
-    indexes = await load_indexes()
-    indexes = [x for x in indexes if x.modpack_name == config.modpack]
-    if not indexes:
-        print()
-        rich.print(
-            '[red]Ошибка! Сборка не найдена на сервере. Нажмите Enter чтобы выбрать сборку[/red]'
-        )
-        input()
-        raise ModpackNotFoundError()
-    index = indexes[0]
+def save_indexes(config: Config, indexes: list[ModpackIndex]) -> None:
+    with open(get_index_path(config), 'w') as f:
+        json.dump([asdict(x) for x in indexes], f, indent=2)
+
+
+def save_local_index(config: Config, index: ModpackIndex) -> None:
+    indexes = load_local_indexes(config)
+    indexes = [x for x in indexes if x.modpack_name != index.modpack_name]
+    indexes.append(index)
+    save_indexes(config, indexes)
+
+
+async def get_modpack(config: Config, online: bool) -> ModpackIndex | None:
+    indexes = await load_remote_indexes() if online else load_local_indexes(config)
+    return next((x for x in indexes if x.modpack_name == config.modpack), None)
+
+
+async def sync_modpack(config: Config, index: ModpackIndex) -> None:
+    print('Обновление сборки...', end='', flush=True)
 
     mc_dir = get_minecraft_dir(config, index.modpack_name)
     assets_dir = get_assets_dir(config)
@@ -72,9 +89,9 @@ async def sync_modpack(config: Config) -> ModpackIndex:
     # [(is_asset, relative_path)]
     to_hash: list[tuple[bool, str]] = []
     for rel_include_path in index.include:
-        include_path = mc_dir / rel_include_path
+        include_path = mc_dir / Path(rel_include_path)
         if include_path.is_file():
-            to_hash.append((False, str(rel_include_path)))
+            to_hash.append((False, rel_include_path))
         elif include_path.is_dir():
             for obj_path in include_path.rglob('*'):
                 if obj_path.is_dir():
@@ -112,7 +129,7 @@ async def sync_modpack(config: Config) -> ModpackIndex:
         client = httpx.AsyncClient()
         while to_download:
             obj = to_download.pop()
-            url = SERVER_BASE + index.modpack_name + '/' + obj
+            url = SERVER_BASE + '/' + index.modpack_name + '/' + obj
             if obj.startswith('assets/'):
                 target_file = assets_dir / obj.removeprefix('assets/')
             else:
@@ -145,5 +162,5 @@ async def sync_modpack(config: Config) -> ModpackIndex:
         for _ in range(8):
             tasks.append(download_coro())
         await asyncio.gather(*tasks)
-
-    return index
+    
+    save_local_index(config, index)

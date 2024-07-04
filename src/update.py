@@ -14,11 +14,11 @@ from src.compat import iswin, ismac, islinux, is_frozen, chmod_x
 
 def get_update_url():
     if iswin():
-        return f'{SERVER_BASE}launcher/{LAUNCHER_NAME}.exe'
+        return f'{SERVER_BASE}/launcher/{LAUNCHER_NAME}.exe'
     if ismac():
-        return f'{SERVER_BASE}launcher/{LAUNCHER_NAME}_macos'
+        return f'{SERVER_BASE}/launcher/{LAUNCHER_NAME}_macos'
     if islinux():
-        return f'{SERVER_BASE}launcher/{LAUNCHER_NAME}_linux'
+        return f'{SERVER_BASE}/launcher/{LAUNCHER_NAME}_linux'
     raise ValueError('Unsupported platform')
 
 

@@ -61,6 +61,7 @@ def exec_custom_cmd(cmd: list[str] | str | None):
 class ModpackSpec(BaseModel):
     exec_before: str | None = None
     exec_after: str | None = None
+    modpack_version: str | None = None
     version_data_path: Path
     instance_dir: Path
     copy_extra: list[str]
@@ -72,7 +73,8 @@ class ModpackSpec(BaseModel):
 class ModpackIndex(BaseModel):
     modpack_name: str
     java_version: str
-    version: str
+    minecraft_version: str
+    modpack_version: str
     asset_index: str
     main_class: str
     libraries: list[dict]
@@ -87,9 +89,19 @@ class ModpackGenerator:
     spec: ModpackSpec
     target_dir: Path
     version_data: dict
+    modpack_version: str
 
-    def __init__(self, spec: ModpackSpec):
+    def __init__(self, spec: ModpackSpec, next_modpack_version: str | None):
         self.spec = spec
+
+        if self.spec.modpack_version:
+            self.modpack_version = self.spec.modpack_version
+        elif next_modpack_version:
+            self.modpack_version = next_modpack_version
+        else:
+            print(f'{spec.modpack_name}: modpack version not specified, using 1')
+            self.modpack_version = '1'
+
         self.target_dir = Path('modpacks') / spec.modpack_name
         self.target_dir.mkdir(parents=True, exist_ok=True)
         with open(spec.version_data_path) as f:
@@ -246,7 +258,8 @@ class ModpackGenerator:
         return ModpackIndex(
             modpack_name=self.spec.modpack_name,
             java_version=self.spec.java_version,
-            version=self.version_data['jar'],
+            minecraft_version=self.version_data['jar'],
+            modpack_version=self.modpack_version,
             asset_index=self.version_data['assetIndex']['id'],
             main_class=self.version_data['mainClass'],
             libraries=self.version_data['libraries'],
@@ -278,7 +291,18 @@ class ModpackGenerator:
 class Spec(BaseModel):
     exec_before_all: str | None = None
     exec_after_all: str | None = None
+    modpack_version_fetch_url: str | None = None
     modpacks: list[ModpackSpec]
+
+    async def fetch_modpacks_versions(self) -> dict[str, str]:
+        if not self.modpack_version_fetch_url:
+            return {}
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.modpack_version_fetch_url)
+            try:
+                return {x['modpack_name']: str(int(x['modpack_version']) + 1) for x in resp.json() if 'modpack_version' in x}
+            except json.JSONDecodeError:
+                return {}
 
 
 async def main():
@@ -294,13 +318,15 @@ async def main():
     indexes: dict[str, dict] = {}
     if index_path.exists():
         indexes = {x['modpack_name']: x for x in json.loads(index_path.read_text())}
+    
+    modpacks_versions = await spec.fetch_modpacks_versions()
 
     for modpack in spec.modpacks:
         if args.only and modpack.modpack_name != args.only:
             continue
         print(f'Generating {modpack.modpack_name}')
         indexes[modpack.modpack_name] = (
-            await ModpackGenerator(modpack).generate()
+            await ModpackGenerator(modpack, modpacks_versions.get(modpack.modpack_name, None)).generate()
         ).model_dump(mode='json')
         print('Done')
 

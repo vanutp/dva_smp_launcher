@@ -72,10 +72,7 @@ def library_name_to_path(full_name: str) -> str:
     return f'libraries/{pkg}/{name}/{version}/{name}-{version}{suffix}.jar'
 
 
-async def launch(
-    modpack_index: ModpackIndex, user_info: AuthenticatedUser, config: Config
-):
-    print('[green]Запуск![/green]', flush=True)
+async def launch(modpack_index: ModpackIndex, config: Config, online: bool):
     mc_dir = get_minecraft_dir(config, modpack_index.modpack_name)
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
@@ -94,16 +91,16 @@ async def launch(
         'classpath': os.pathsep.join(classpath),
         'classpath_separator': os.pathsep,
         'library_directory': str(mc_dir / 'libraries'),
-        'auth_player_name': user_info.username,
-        'version_name': modpack_index.version,
+        'auth_player_name': config.user_info.username,
+        'version_name': modpack_index.minecraft_version,
         'game_directory': str(mc_dir),
         'assets_root': str(get_assets_dir(config)),
         'assets_index_name': modpack_index.asset_index,
-        'auth_uuid': user_info.uuid.replace('-', ''),
+        'auth_uuid': config.user_info.uuid.replace('-', ''),
         'auth_access_token': config.token,
         'clientid': '',
         'auth_xuid': '',
-        'user_type': 'mojang',
+        'user_type': 'mojang' if online else 'offline',
         'version_type': 'release',
         'resolution_width': '925',
         'resolution_height': '530',
@@ -117,16 +114,17 @@ async def launch(
         '-Dfile.encoding=UTF-8',
     ]
 
-    auth_provider = AuthProvider.get()
-    if isinstance(auth_provider, ElyByProvider):
-        java_options.insert(
-            0, f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}=ely.by'
-        )
-    elif isinstance(auth_provider, TGAuthProvider):
-        java_options.insert(
-            0,
-            f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}={build_cfg.TGAUTH_BASE}',
-        )
+    if online:
+        auth_provider = AuthProvider.get()
+        if isinstance(auth_provider, ElyByProvider):
+            java_options.insert(
+                0, f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}=ely.by'
+            )
+        elif isinstance(auth_provider, TGAuthProvider):
+            java_options.insert(
+                0,
+                f'-javaagent:{mc_dir / AUTHLIB_INJECTOR_FILENAME}={build_cfg.TGAUTH_BASE}',
+            )
 
     for arg in modpack_index.java_args:
         if not isinstance(arg['value'], list):
