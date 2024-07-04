@@ -147,7 +147,7 @@ def find_java_in_dir(
     suffix = Path(suffix)
     res = []
     for subdir in Path(dir_).glob('*'):
-        if subdir.is_file() or subdir.is_symlink():
+        if subdir.is_file():
             continue
         if startswith and not subdir.name.startswith(startswith):
             continue
