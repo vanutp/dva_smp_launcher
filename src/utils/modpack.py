@@ -18,6 +18,18 @@ def hash_file(path: Path) -> str:
         return sha1(f.read()).hexdigest()
 
 
+def get_files_in_dir(path: Path, rel_to: Path) -> list[str]:
+    normalize = lambda x: str(x.relative_to(rel_to)).replace('\\', '/')
+    if path.is_file():
+        return [normalize(path)]
+    files = []
+    for file_path in path.rglob('*'):
+        if file_path.is_dir():
+            continue
+        files.append(normalize(file_path))
+    return files
+
+
 async def download_file(client: httpx.AsyncClient, url: str, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     resp = await client.get(url)
@@ -38,6 +50,7 @@ class ModpackIndex:
     java_args: list[dict]
     game_args: list[dict]
     include: list[str]
+    include_no_overwrite: list[str]
     objects: dict[str, str]
     client_filename: str
 
@@ -59,7 +72,7 @@ def load_local_indexes(config: Config) -> list[ModpackIndex]:
     try:
         with open(index_path) as f:
             return indexes_from_data(json.load(f))
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return []
 
 
@@ -80,7 +93,7 @@ async def get_modpack(config: Config, online: bool) -> ModpackIndex | None:
     return next((x for x in indexes if x.modpack_name == config.modpack), None)
 
 
-async def sync_modpack(config: Config, index: ModpackIndex) -> None:
+async def sync_modpack(config: Config, index: ModpackIndex, force_overwrite: bool = False) -> None:
     print('Обновление сборки...', end='', flush=True)
 
     mc_dir = get_minecraft_dir(config, index.modpack_name)
@@ -88,23 +101,10 @@ async def sync_modpack(config: Config, index: ModpackIndex) -> None:
 
     # [(is_asset, relative_path)]
     to_hash: list[tuple[bool, str]] = []
-    for rel_include_path in index.include:
+    for rel_include_path in index.include + (index.include_no_overwrite if force_overwrite else []):
         include_path = mc_dir / Path(rel_include_path)
-        if include_path.is_file():
-            to_hash.append((False, rel_include_path))
-        elif include_path.is_dir():
-            for obj_path in include_path.rglob('*'):
-                if obj_path.is_dir():
-                    continue
-                rel_obj_path = obj_path.relative_to(mc_dir)
-                norm_rel_obj_path = str(rel_obj_path).replace('\\', '/')
-                to_hash.append((False, norm_rel_obj_path))
-    for obj_path in assets_dir.rglob('*'):
-        if obj_path.is_dir():
-            continue
-        rel_obj_path = obj_path.relative_to(assets_dir)
-        norm_rel_obj_path = str(rel_obj_path).replace('\\', '/')
-        to_hash.append((True, norm_rel_obj_path))
+        to_hash.extend([(False, x) for x in get_files_in_dir(include_path, mc_dir)])
+    to_hash.extend([(True, x) for x in get_files_in_dir(assets_dir, assets_dir)])
 
     existing_objects = {}
     print('\r', end='')
@@ -120,8 +120,16 @@ async def sync_modpack(config: Config, index: ModpackIndex) -> None:
         if obj not in index.objects:
             (mc_dir / obj).unlink()
 
+    existing_no_overwrite = set()
+    if not force_overwrite:
+        for rel_include_path in index.include_no_overwrite:
+            include_path = mc_dir / Path(rel_include_path)
+            existing_no_overwrite.update(get_files_in_dir(include_path, mc_dir))
+
     to_download = set()
     for obj, obj_hash in index.objects.items():
+        if obj in existing_no_overwrite:
+            continue
         if obj not in existing_objects or existing_objects[obj] != obj_hash:
             to_download.add(obj)
 

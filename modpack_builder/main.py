@@ -65,6 +65,7 @@ class ModpackSpec(BaseModel):
     version_data_path: Path
     instance_dir: Path
     copy_extra: list[str]
+    copy_extra_no_overwrite: list[str]
     modpack_name: str
     java_version: str
     clean_forge_libs_path: Path | None
@@ -81,6 +82,7 @@ class ModpackIndex(BaseModel):
     java_args: list[dict]
     game_args: list[dict]
     include: list[str]
+    include_no_overwrite: list[str]
     objects: dict[str, str]
     client_filename: str
 
@@ -234,7 +236,7 @@ class ModpackGenerator:
 
     def copy_extra(self):
         print('Copying extra data (configs, etc.)...')
-        for obj in self.spec.copy_extra:
+        for obj in self.spec.copy_extra + self.spec.copy_extra_no_overwrite:
             source_path = self.spec.instance_dir / obj
             target_path = self.target_dir / obj
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -271,6 +273,7 @@ class ModpackGenerator:
                 self.get_client_filename(),
                 *self.spec.copy_extra,
             ],
+            include_no_overwrite=self.spec.copy_extra_no_overwrite,
             objects=hashes,
             client_filename=self.get_client_filename(),
         )

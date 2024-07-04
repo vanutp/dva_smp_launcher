@@ -129,7 +129,11 @@ async def main_menu(indexes: list[ModpackIndex], config: Config, online: bool):
         elif answer == 'change_modpack':
             config.modpack = select_modpack(indexes)
         elif answer == 'sync_modpack':
-            await sync_modpack(config, selected_modpack_index)
+            force_overwrite = tui.choice(
+                'Сбросить опциональные файлы (конфиги и подобное)?',
+                [('Нет', False), ('Да', True)],
+            )
+            await sync_modpack(config, selected_modpack_index, force_overwrite)
         elif answer == 'java_path':
             config.java_path[config.modpack] = ask_user_java(
                 required_java_version, java_path
