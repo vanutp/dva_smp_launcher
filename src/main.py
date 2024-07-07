@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import string
 import sys
 import traceback
@@ -83,7 +84,7 @@ async def main_menu(indexes: list[ModpackIndex], config: Config, online: bool):
             if len(indexes) > 1
             else []
         )
-        
+
         sync_modpack_entry = (
             [('Синхронизировать сборку', 'sync_modpack')]
             if online
@@ -186,7 +187,7 @@ async def _main():
             indexes = await load_remote_indexes()
         except httpx.HTTPError:
             online = False
-    
+
     if not online:
         indexes = load_local_indexes(config)
 
@@ -208,7 +209,14 @@ async def _main():
         await main_menu(indexes, config, online)
 
 
+def sigint_handler(signum, frame):
+    print("\n[blue]Выход...[/blue]")
+    sys.exit(0)
+
+
 def main():
+    signal.signal(signal.SIGINT, sigint_handler)
+
     try:
         asyncio.run(_main())
     except LauncherError as e:
