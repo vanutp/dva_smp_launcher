@@ -1,14 +1,14 @@
 import asyncio
 import os.path
-import shlex
+from pathlib import Path
 from subprocess import Popen, PIPE, STDOUT
 
 from rich import print
 
 import build_cfg
-from src.auth import AuthenticatedUser, AuthProvider, ElyByProvider
+from src.auth import AuthProvider, ElyByProvider
 from src.auth.tgauth import TGAuthProvider
-from src.compat import iswin, ismac, win_pipe_nowait, islinux
+from src.compat import iswin, ismac, win_pipe_nowait, islinux, win_get_long_path_name
 from src.config import Config, get_minecraft_dir
 from src.errors import LauncherError
 from src.utils.modpack import ModpackIndex, get_assets_dir
@@ -73,7 +73,8 @@ def library_name_to_path(full_name: str) -> str:
 
 
 async def launch(modpack_index: ModpackIndex, config: Config, online: bool):
-    mc_dir = get_minecraft_dir(config, modpack_index.modpack_name)
+    mc_dir_short = get_minecraft_dir(config, modpack_index.modpack_name)
+    mc_dir = Path(win_get_long_path_name(str(mc_dir_short)))
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
     classpath = []
@@ -162,7 +163,7 @@ async def launch(modpack_index: ModpackIndex, config: Config, online: bool):
         kwargs['stdout'] = PIPE
         kwargs['stderr'] = STDOUT
 
-    p = Popen(command, start_new_session=True, cwd=str(mc_dir), **kwargs)
+    p = Popen(command, start_new_session=True, cwd=str(mc_dir_short), **kwargs)
     await asyncio.sleep(3)
     if (return_code := p.poll()) is not None:
         if iswin():

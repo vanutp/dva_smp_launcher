@@ -78,3 +78,13 @@ def win_pipe_nowait(pipefd):
     if res == 0:
         raise WinError()
     return True
+
+
+def win_get_long_path_name(path: str) -> str:
+    from ctypes import create_unicode_buffer, windll, WinError
+
+    buf = create_unicode_buffer(1024)
+    res = windll.kernel32.GetLongPathNameW(path, buf, 1024)
+    if res == 0:
+        raise WinError()
+    return buf.value
