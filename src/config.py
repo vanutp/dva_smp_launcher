@@ -7,7 +7,6 @@ from pathlib import Path
 from platformdirs import PlatformDirs
 
 from build_cfg import DATA_DIR_NAME
-from src.utils.java import fix_java_path
 from src.auth import AuthenticatedUser
 
 
@@ -66,6 +65,7 @@ def load_config() -> Config:
     res = Config(**data)
     if isinstance(res.java_path, str):
         res.java_path = {res.modpack: res.java_path}
+    from src.utils.java import fix_java_path
     res.java_path = {name: fix_java_path(path) for name, path in res.java_path.items()}
 
     if isinstance(res.user_info, dict):
@@ -95,4 +95,5 @@ __all__ = [
     'save_config',
     'get_minecraft_dir',
     'get_assets_dir',
+    'get_data_dir',
 ]

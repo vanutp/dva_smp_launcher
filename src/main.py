@@ -103,7 +103,7 @@ async def main_menu(indexes: list[ModpackIndex], config: Config, online: bool):
         if not (
             config.modpack in config.java_path and config.java_path[config.modpack]
         ):
-            config.java_path[config.modpack] = find_java(required_java_version)
+            config.java_path[config.modpack] = await find_java(required_java_version, config)
             save_config(config)
         java_path = config.java_path[config.modpack]
 

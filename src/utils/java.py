@@ -3,16 +3,24 @@ Most of the paths are from https://github.com/PrismLauncher/PrismLauncher/blob/d
 """
 
 import os.path
+import platform
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryFile
+from urllib.parse import urlencode
+from zipfile import ZipFile
 
+import httpx
 import inquirer.errors
+import rich
+from rich.progress import Progress, track
 
 from src.compat import ismac, islinux, iswin
-from src.tui import ask
+from src.config import Config, get_data_dir
+from src import tui
 
 if iswin():
     from winreg import (
@@ -202,7 +210,7 @@ def fix_java_path(path: str) -> str:
 
 def ask_user_java(required_version: str, default: str = None) -> JavaInstall | None:
     java_filename = 'java.exe' if iswin() else 'java'
-    user_java = ask(
+    user_java = tui.ask(
         f'Полный путь к {java_filename}',
         validate=lambda path: validate_user_java(required_version, path),
         default=default,
@@ -211,7 +219,64 @@ def ask_user_java(required_version: str, default: str = None) -> JavaInstall | N
     return check_java(user_java)
 
 
-def find_java(required_version: str) -> str:
+def can_download_java():
+    # x86_64 on linux/mac, AMD64 on windows
+    return iswin() and platform.machine().lower() in ['x86_64', 'amd64']
+
+
+async def download_java(required_version: str, target_dir: Path) -> JavaInstall:
+    print('Загрузка java...', end='', flush=True)
+    params = {
+        'java_version': required_version,
+        'os': 'windows',
+        'arch': 'x64',
+        'archive_type': 'zip',
+        'java_package_type': 'jre',
+        'javafx_bundled': 'false',
+        'latest': 'true',
+        'release_status': 'ga',
+    }
+    versions_url = 'https://api.azul.com/metadata/v1/zulu/packages/?' + urlencode(
+        params
+    )
+    client = httpx.AsyncClient()
+    resp = await client.get(versions_url)
+    resp.raise_for_status()
+    versions = resp.json()
+    if not versions:
+        raise ValueError('No java versions available')
+    version_url = versions[0]['download_url']
+    with TemporaryFile() as f:
+        async with client.stream('GET', version_url) as resp:
+            print('\r', end='')
+            total = int(resp.headers['Content-Length'])
+            with rich.progress.Progress(
+                rich.progress.TextColumn('[progress.description]{task.description}'),
+                rich.progress.BarColumn(),
+                rich.progress.DownloadColumn(),
+                rich.progress.TransferSpeedColumn(),
+            ) as progress:
+                t = progress.add_task('Загрузка java...', total=total)
+                async for chunk in resp.aiter_bytes():
+                    f.write(chunk)
+                    progress.update(t, completed=resp.num_bytes_downloaded)
+        f.seek(0)
+        zf = ZipFile(f)
+        for archive_file_info in track(zf.infolist(), 'Распаковка java...'):
+            if archive_file_info.is_dir():
+                continue
+            with zf.open(archive_file_info.filename) as archived_file:
+                target_file_path = target_dir / archive_file_info.filename.split('/', 1)[1]
+                target_file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(target_file_path, 'wb') as target_file:
+                    target_file.write(archived_file.read())
+    res = check_java(target_dir / 'bin' / 'java')
+    if not res:
+        raise ValueError('Ошибка загрузки java')
+    return res
+
+
+async def find_java(required_version: str, config: Config) -> str:
     if iswin():
         res = find_java_win()
     elif islinux():
@@ -221,11 +286,22 @@ def find_java(required_version: str) -> str:
     else:
         raise ValueError('Unsupported platform')
 
-    default_java_path = 'javaw' if iswin() else 'java'
-    if default_java_path and (default_java := check_java(default_java_path)):
+    if default_java := check_java('java'):
         res.append(default_java)
 
+    launcher_java_dir = get_data_dir(config) / 'java' / required_version
+    if can_download_java():
+        launcher_java_path = launcher_java_dir / 'bin' / 'java.exe'
+        if launcher_java := check_java(launcher_java_path):
+            res.append(launcher_java)
+
     res = [x for x in res if x and is_good_version(required_version, x)]
+
+    if not res and can_download_java():
+        print(f'Java {required_version} не найдена')
+        if tui.choice('Скачать автоматически?', [('Да', True), ('Нет', False)]):
+            res = [await download_java(required_version, launcher_java_dir)]
+
     if not res:
         print(f'Java {required_version} не найдена')
         print('Установите ее с https://adoptium.net/ и перезапустите лаунчер')
