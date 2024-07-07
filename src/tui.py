@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, TypeVar
 
 import inquirer
 import sys
@@ -29,7 +29,10 @@ def ask(
     )
 
 
-def choice(message: str, choices: list[tuple[str, str]]) -> str:
+T = TypeVar('T')
+
+
+def choice(message: str, choices: list[tuple[str, T]]) -> T:
     render = ConsoleRender()
     return render.render(inquirer.List('option', message=message, choices=choices), {})
 

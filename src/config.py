@@ -67,7 +67,7 @@ def load_config() -> Config:
     if isinstance(res.java_path, str):
         res.java_path = {res.modpack: res.java_path}
     res.java_path = {name: fix_java_path(path) for name, path in res.java_path.items()}
-    
+
     if isinstance(res.user_info, dict):
         res.user_info = AuthenticatedUser(**res.user_info)
 

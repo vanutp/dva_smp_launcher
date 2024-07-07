@@ -9,7 +9,7 @@ from rich import print
 import httpx
 
 from src import tui
-from src.auth import AuthenticatedUser, AuthProvider
+from src.auth import AuthProvider
 from src.auth.base import UnauthorizedException
 from src.compat import perform_forbidden_nixery
 from src.config import load_config, save_config, Config
@@ -53,7 +53,7 @@ async def sync_and_launch(config: Config, online: bool):
             f'\n[red]Ошибка! Сборка не найдена {location_msg}. Нажмите Enter чтобы выбрать сборку[/red]'
         )
         input()
-        indexes = await load_remote_indexes() if online else load_local_indexes()
+        indexes = await load_remote_indexes() if online else load_local_indexes(config)
         config.modpack = select_modpack(indexes)
         modpack_index = await get_modpack(config, online)
         if not modpack_index:
@@ -61,11 +61,15 @@ async def sync_and_launch(config: Config, online: bool):
 
     if online:
         current_version = next(
-            (x.modpack_version for x in load_local_indexes(config) if x.modpack_name == modpack_index.modpack_name),
+            (
+                x.modpack_version
+                for x in load_local_indexes(config)
+                if x.modpack_name == modpack_index.modpack_name
+            ),
             None,
         )
         remote_version = modpack_index.modpack_version
-        if not current_version or int(current_version) < int(remote_version):
+        if not current_version or current_version != remote_version:
             await sync_modpack(config, modpack_index)
 
     print('[green]Запуск![/green]', flush=True)
@@ -86,9 +90,7 @@ async def main_menu(indexes: list[ModpackIndex], config: Config, online: bool):
         )
 
         sync_modpack_entry = (
-            [('Синхронизировать сборку', 'sync_modpack')]
-            if online
-            else []
+            [('Синхронизировать сборку', 'sync_modpack')] if online else []
         )
 
         selected_modpack_index = next(
@@ -171,7 +173,10 @@ async def _main():
 
     auth_provider = AuthProvider.get()
     if not config.token:
-        config.token = await auth_provider.authenticate()
+        try:
+            config.token = await auth_provider.authenticate()
+        except httpx.HTTPError:
+            raise LauncherError('При первом запуске необходим доступ к интернету')
     try:
         config.user_info = await auth_provider.get_user(config.token)
         save_config(config)

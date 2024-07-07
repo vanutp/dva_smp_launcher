@@ -76,16 +76,12 @@ def load_local_indexes(config: Config) -> list[ModpackIndex]:
         return []
 
 
-def save_indexes(config: Config, indexes: list[ModpackIndex]) -> None:
-    with open(get_index_path(config), 'w') as f:
-        json.dump([asdict(x) for x in indexes], f, indent=2)
-
-
 def save_local_index(config: Config, index: ModpackIndex) -> None:
     indexes = load_local_indexes(config)
     indexes = [x for x in indexes if x.modpack_name != index.modpack_name]
     indexes.append(index)
-    save_indexes(config, indexes)
+    with open(get_index_path(config), 'w') as f:
+        json.dump([asdict(x) for x in indexes], f, indent=2)
 
 
 async def get_modpack(config: Config, online: bool) -> ModpackIndex | None:
@@ -93,7 +89,9 @@ async def get_modpack(config: Config, online: bool) -> ModpackIndex | None:
     return next((x for x in indexes if x.modpack_name == config.modpack), None)
 
 
-async def sync_modpack(config: Config, index: ModpackIndex, force_overwrite: bool = False) -> None:
+async def sync_modpack(
+    config: Config, index: ModpackIndex, force_overwrite: bool = False
+) -> None:
     print('Обновление сборки...', end='', flush=True)
 
     mc_dir = get_minecraft_dir(config, index.modpack_name)
@@ -101,7 +99,9 @@ async def sync_modpack(config: Config, index: ModpackIndex, force_overwrite: boo
 
     # [(is_asset, relative_path)]
     to_hash: list[tuple[bool, str]] = []
-    for rel_include_path in index.include + (index.include_no_overwrite if force_overwrite else []):
+    for rel_include_path in index.include + (
+        index.include_no_overwrite if force_overwrite else []
+    ):
         include_path = mc_dir / Path(rel_include_path)
         to_hash.extend([(False, x) for x in get_files_in_dir(include_path, mc_dir)])
     to_hash.extend([(True, x) for x in get_files_in_dir(assets_dir, assets_dir)])
@@ -170,5 +170,5 @@ async def sync_modpack(config: Config, index: ModpackIndex, force_overwrite: boo
         for _ in range(8):
             tasks.append(download_coro())
         await asyncio.gather(*tasks)
-    
+
     save_local_index(config, index)

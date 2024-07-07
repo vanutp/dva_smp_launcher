@@ -75,7 +75,7 @@ class ModpackIndex(BaseModel):
     modpack_name: str
     java_version: str
     minecraft_version: str
-    modpack_version: str
+    modpack_version: str | None = None
     asset_index: str
     main_class: str
     libraries: list[dict]
@@ -302,10 +302,14 @@ class Spec(BaseModel):
             return {}
         async with httpx.AsyncClient() as client:
             resp = await client.get(self.modpack_version_fetch_url)
-            try:
-                return {x['modpack_name']: str(int(x['modpack_version']) + 1) for x in resp.json() if 'modpack_version' in x}
-            except json.JSONDecodeError:
+            if resp.status_code == 404:
                 return {}
+            resp.raise_for_status()
+            return {
+                x['modpack_name']: str(int(x['modpack_version']) + 1)
+                for x in resp.json()
+                if 'modpack_version' in x
+            }
 
 
 async def main():
@@ -321,7 +325,7 @@ async def main():
     indexes: dict[str, dict] = {}
     if index_path.exists():
         indexes = {x['modpack_name']: x for x in json.loads(index_path.read_text())}
-    
+
     modpacks_versions = await spec.fetch_modpacks_versions()
 
     for modpack in spec.modpacks:
@@ -329,7 +333,9 @@ async def main():
             continue
         print(f'Generating {modpack.modpack_name}')
         indexes[modpack.modpack_name] = (
-            await ModpackGenerator(modpack, modpacks_versions.get(modpack.modpack_name, None)).generate()
+            await ModpackGenerator(
+                modpack, modpacks_versions.get(modpack.modpack_name, None)
+            ).generate()
         ).model_dump(mode='json')
         print('Done')
 
