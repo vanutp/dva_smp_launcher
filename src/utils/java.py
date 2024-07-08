@@ -7,16 +7,17 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryFile
 from urllib.parse import urlencode
-from zipfile import ZipFile
 
 import httpx
 import inquirer.errors
 import rich
-from rich.progress import Progress, track
+from rich.progress import Progress
 
 from src.compat import ismac, islinux, iswin
 from src.config import Config, get_data_dir
@@ -219,26 +220,38 @@ def ask_user_java(required_version: str, default: str = None) -> JavaInstall | N
     return check_java(user_java)
 
 
-def can_download_java():
-    # x86_64 on linux/mac, AMD64 on windows
-    return iswin() and platform.machine().lower() in ['x86_64', 'amd64']
-
-
-async def download_java(required_version: str, target_dir: Path) -> JavaInstall:
-    print('Загрузка java...', end='', flush=True)
-    params = {
+def get_java_download_params(required_version: str) -> dict:
+    match platform.machine().lower():
+        case 'x86_64' | 'amd64':
+            arch = 'x64'
+        case 'arm64':
+            arch = 'aarch64'
+        case _:
+            raise ValueError(f'Unsupported architecture: {platform.machine()}')
+    if iswin():
+        os_ = 'windows'
+    elif islinux():
+        os_ = 'linux-glibc'
+    elif ismac():
+        os_ = 'macos'
+    else:
+        raise ValueError(f'Unsupported OS: {sys.platform}')
+    return {
         'java_version': required_version,
-        'os': 'windows',
-        'arch': 'x64',
-        'archive_type': 'zip',
+        'os': os_,
+        'arch': arch,
+        'archive_type': 'tar.gz',
         'java_package_type': 'jre',
         'javafx_bundled': 'false',
         'latest': 'true',
         'release_status': 'ga',
     }
-    versions_url = 'https://api.azul.com/metadata/v1/zulu/packages/?' + urlencode(
-        params
-    )
+
+
+async def download_java(required_version: str, target_dir: Path) -> JavaInstall:
+    print('Загрузка java...', end='', flush=True)
+    query_str = urlencode(get_java_download_params(required_version))
+    versions_url = f'https://api.azul.com/metadata/v1/zulu/packages/?{query_str}'
     client = httpx.AsyncClient()
     resp = await client.get(versions_url)
     resp.raise_for_status()
@@ -261,15 +274,16 @@ async def download_java(required_version: str, target_dir: Path) -> JavaInstall:
                     f.write(chunk)
                     progress.update(t, completed=resp.num_bytes_downloaded)
         f.seek(0)
-        zf = ZipFile(f)
-        for archive_file_info in track(zf.infolist(), 'Распаковка java...'):
-            if archive_file_info.is_dir():
-                continue
-            with zf.open(archive_file_info.filename) as archived_file:
-                target_file_path = target_dir / archive_file_info.filename.split('/', 1)[1]
-                target_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(target_file_path, 'wb') as target_file:
-                    target_file.write(archived_file.read())
+        tf = tarfile.open(fileobj=f, mode='r:gz')
+        print('Распаковка java...')
+
+        def tar_filter(tarinfo: tarfile.TarInfo, _):
+            if '/' not in tarinfo.name:
+                return None
+            tarinfo.name = tarinfo.name.split('/', 1)[1]
+            return tarinfo
+
+        tf.extractall(target_dir, filter=tar_filter)
     res = check_java(target_dir / 'bin' / 'java')
     if not res:
         raise ValueError('Ошибка загрузки java')
@@ -290,14 +304,13 @@ async def find_java(required_version: str, config: Config) -> str:
         res.append(default_java)
 
     launcher_java_dir = get_data_dir(config) / 'java' / required_version
-    if can_download_java():
-        launcher_java_path = launcher_java_dir / 'bin' / 'java.exe'
-        if launcher_java := check_java(launcher_java_path):
-            res.append(launcher_java)
+    launcher_java_path = launcher_java_dir / 'bin' / 'java.exe'
+    if launcher_java := check_java(launcher_java_path):
+        res.append(launcher_java)
 
     res = [x for x in res if x and is_good_version(required_version, x)]
 
-    if not res and can_download_java():
+    if not res:
         print(f'Java {required_version} не найдена')
         if tui.choice('Скачать автоматически?', [('Да', True), ('Нет', False)]):
             res = [await download_java(required_version, launcher_java_dir)]
