@@ -105,6 +105,7 @@ async def main_menu(indexes: list[ModpackIndex], config: Config, online: bool):
         ):
             config.java_path[config.modpack] = await find_java(required_java_version, config)
             save_config(config)
+            continue
         java_path = config.java_path[config.modpack]
 
         answer = tui.choice(
