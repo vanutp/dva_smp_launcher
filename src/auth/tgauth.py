@@ -34,12 +34,12 @@ class TGAuthProvider(AuthProvider):
         start_resp = LoginStartResponse(**start_resp.json())
         tg_deeplink = f'https://t.me/{bot_name}?start={start_resp.code}'
         webbrowser.open(tg_deeplink)
-        print('Нажмите start в боте')
-        print('Или отсканируйте QR код:')
+        print('Пробуем открыть Телеграм-бота. Когда он откроется, нажмите «Запустить».')
+        print('Если вы используете Телеграм на другом устройстве, вы можете отсканировать QR-код:')
         qr = QRCode()
         qr.add_data(tg_deeplink)
         qr.print_ascii(tty=True)
-        print(f'Или введите код в бота @{bot_name} вручную: {start_resp.code}')
+        print(f'или самостоятельно открыть бота @{bot_name} и ввести код: {start_resp.code}')
 
         done = False
         while not done:
