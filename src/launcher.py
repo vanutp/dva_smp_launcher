@@ -73,8 +73,9 @@ def library_name_to_path(full_name: str) -> str:
 
 
 async def launch(modpack_index: ModpackIndex, config: Config, online: bool):
-    mc_dir_short = get_minecraft_dir(config, modpack_index.modpack_name)
-    mc_dir = Path(win_get_long_path_name(str(mc_dir_short)))
+    mc_dir = mc_dir_short = get_minecraft_dir(config, modpack_index.modpack_name)
+    if iswin():
+        mc_dir = Path(win_get_long_path_name(str(mc_dir_short)))
     (mc_dir / 'natives').mkdir(exist_ok=True)
 
     classpath = []
