@@ -26,7 +26,14 @@ jobs:
       - run: poetry install --no-root
       - run: |
           LAUNCHER_NAME=`python -c "from build_cfg import LAUNCHER_NAME; print(LAUNCHER_NAME)"`
-          poetry run pyinstaller --onefile --copy-metadata readchar --name "$LAUNCHER_NAME" --exclude-module PIL --icon assets/"$LAUNCHER_NAME".png launch.py
+          poetry run pyinstaller \
+            --onefile \
+            --copy-metadata readchar \
+            --name "$LAUNCHER_NAME" \
+            --exclude-module PIL \
+            --icon assets/"$LAUNCHER_NAME".png \
+            --target-arch universal2 \
+            launch.py
       - if: ${{ github.ref }} == master
         uses: shimataro/ssh-key-action@v2
         with:
