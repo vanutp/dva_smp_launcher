@@ -4,12 +4,14 @@ from pathlib import Path
 
 import httpx
 import sys
+import errno
 
 from rich import print
 from rich.progress import Progress
 
 from build_cfg import SERVER_BASE, LAUNCHER_NAME
 from src.compat import iswin, ismac, islinux, is_frozen, chmod_x
+from src.errors import LauncherError
 
 
 def get_update_url():
@@ -48,29 +50,38 @@ async def download_update(file_path: Path):
 
 
 async def update_if_required():
-    if len(sys.argv) == 3 and sys.argv[1] == 'updated':
-        Path(sys.argv[2]).unlink()
-        return
-    if not await update_required():
-        return
+    try:
+        if len(sys.argv) == 3 and sys.argv[1] == 'updated':
+            Path(sys.argv[2]).unlink()
+            return
+        if not await update_required():
+            return
 
-    current_file = Path(sys.executable)
-    old_file_name = current_file.with_stem(current_file.stem + '_old')
+        current_file = Path(sys.executable)
+        old_file_name = current_file.with_stem(current_file.stem + '_old')
 
-    if iswin():
-        # windows defender doesn't like renaming a file immediately
-        # after downloading, so downloading directly to final path
-        current_file.rename(old_file_name)
-        await download_update(current_file)
-    else:
-        # using safer approach on sane oses
-        upd_file_name = current_file.with_stem(current_file.stem + '_upd')
-        await download_update(upd_file_name)
-        current_file.rename(old_file_name)
-        upd_file_name.rename(current_file)
+        if iswin():
+            # windows defender doesn't like renaming a file immediately
+            # after downloading, so downloading directly to final path
+            current_file.rename(old_file_name)
+            await download_update(current_file)
+        else:
+            # using safer approach on sane oses
+            upd_file_name = current_file.with_stem(current_file.stem + '_upd')
+            await download_update(upd_file_name)
+            current_file.rename(old_file_name)
+            upd_file_name.rename(current_file)
 
-    chmod_x(current_file)
-    os.execl(sys.executable, sys.executable, 'updated', old_file_name)
+        chmod_x(current_file)
+        os.execl(sys.executable, sys.executable, 'updated', old_file_name)
+    except OSError as e:
+        if e.errno == errno.EROFS:
+            message = 'Не удалось обновить лаунчер, недостаточно прав на запись'
+            if ismac():
+                message += '. Если файл запущен из образа диска, перетащите его оттуда (например, в папку Applications)'
+            raise LauncherError(message)
+        else:
+            raise
 
 
 __all__ = ['update_if_required']
