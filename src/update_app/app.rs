@@ -118,11 +118,12 @@ impl UpdateApp {
         }
     }
 
-    fn render_close_button(&self, ui: &mut egui::Ui) {
+    fn render_close_button(&mut self, ui: &mut egui::Ui) {
         if ui
             .button(LangMessage::ProceedToLauncher.to_string(&self.lang))
             .clicked()
         {
+            self.closed_by_up_to_date = true;
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
