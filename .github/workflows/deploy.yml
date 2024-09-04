@@ -69,6 +69,8 @@ jobs:
 
             cargo install cargo-bundle
 
+            export MACOSX_DEPLOYMENT_TARGET=10.8
+
             cargo bundle --release --target aarch64-apple-darwin
             mkdir -p app
             cp -r "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app" "app/$DISPLAY_LAUNCHER_NAME.app"

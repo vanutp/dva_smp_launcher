@@ -4,7 +4,6 @@ mod app;
 mod auth;
 mod config;
 mod constants;
-mod interactive;
 mod lang;
 mod launcher;
 mod message_provider;
