@@ -94,7 +94,7 @@ jobs:
             echo "$VERSION" > launcher/version_macos.txt
           fi
 
-      - name: Upload to server
+      - name: Set up SSH
         if: github.ref == 'refs/heads/master'
         uses: shimataro/ssh-key-action@v2
         with:
@@ -108,6 +108,13 @@ jobs:
           SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
         run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null launcher/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
+
+      - name: Purge Cloudflare cache
+        if: github.ref == 'refs/heads/master'
+        env:
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
+        run: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $SERVER_USER@$SERVER_ADDR '~/purge_cf_cache.sh'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

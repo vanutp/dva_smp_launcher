@@ -22,14 +22,14 @@ enum UpdateStatus {
     NeedUpdate,
     UpToDate,
     UpdateError(String),
-    UpdateErrorOffline,
+    UpdateErrorOffline(String),
 }
 
 enum DownloadStatus {
     NeedDownloading,
     Downloaded(Vec<u8>),
     DownloadError(String),
-    DownloadErrorOffline,
+    DownloadErrorOffline(String),
     ErrorReadOnly,
 }
 
@@ -41,7 +41,7 @@ pub struct UpdateApp {
     update_progress_bar: Arc<GuiProgressBar>,
     update_status: UpdateStatus,
     download_status: DownloadStatus,
-    closed_by_up_to_date: bool,
+    exit_on_close: bool,
 }
 
 pub fn run_gui(config: &runtime_config::Config) {
@@ -57,7 +57,7 @@ pub fn run_gui(config: &runtime_config::Config) {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size((240.0, 120.0))
+            .with_inner_size((300.0, 150.0))
             .with_icon(utils::get_icon_data()),
         ..Default::default()
     };
@@ -78,7 +78,7 @@ impl eframe::App for UpdateApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        if !self.closed_by_up_to_date {
+        if self.exit_on_close {
             std::process::exit(0);
         }
     }
@@ -94,7 +94,9 @@ impl UpdateApp {
             let _ = need_update_sender.send(match need_update().await {
                 Ok(true) => UpdateStatus::NeedUpdate,
                 Ok(false) => UpdateStatus::UpToDate,
-                Err(e) if utils::is_connect_error(&e) => UpdateStatus::UpdateErrorOffline,
+                Err(e) if utils::is_connect_error(&e) => {
+                    UpdateStatus::UpdateErrorOffline(e.to_string())
+                }
                 Err(e) => UpdateStatus::UpdateError(e.to_string()),
             });
             ctx_clone.request_repaint();
@@ -114,7 +116,7 @@ impl UpdateApp {
             update_progress_bar,
             update_status: UpdateStatus::Checking,
             download_status: DownloadStatus::NeedDownloading,
-            closed_by_up_to_date: false,
+            exit_on_close: true,
         }
     }
 
@@ -123,7 +125,7 @@ impl UpdateApp {
             .button(LangMessage::ProceedToLauncher.to_string(&self.lang))
             .clicked()
         {
-            self.closed_by_up_to_date = true;
+            self.exit_on_close = false;
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -152,7 +154,7 @@ impl UpdateApp {
                             ui.label(LangMessage::Launching.to_string(&self.lang));
                         }
                         DownloadStatus::DownloadError(_) => {}
-                        DownloadStatus::DownloadErrorOffline => {}
+                        DownloadStatus::DownloadErrorOffline(_) => {}
                         DownloadStatus::NeedDownloading => {
                             panic!("Should not receive NeedDownloading");
                         }
@@ -172,8 +174,12 @@ impl UpdateApp {
                                 let _ = new_binary_sender.send(
                                     match download_new_launcher(update_progress_bar).await {
                                         Ok(new_binary) => DownloadStatus::Downloaded(new_binary),
-                                        Err(e) if utils::is_read_only_error(&e) => DownloadStatus::ErrorReadOnly,
-                                        Err(e) if utils::is_connect_error(&e) => DownloadStatus::DownloadErrorOffline,
+                                        Err(e) if utils::is_read_only_error(&e) => {
+                                            DownloadStatus::ErrorReadOnly
+                                        }
+                                        Err(e) if utils::is_connect_error(&e) => {
+                                            DownloadStatus::DownloadErrorOffline(e.to_string())
+                                        }
                                         Err(e) => DownloadStatus::DownloadError(e.to_string()),
                                     },
                                 );
@@ -181,11 +187,11 @@ impl UpdateApp {
                             });
                         }
                         UpdateStatus::UpToDate => {
-                            self.closed_by_up_to_date = true;
+                            self.exit_on_close = false;
                             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                         UpdateStatus::UpdateError(_) => {}
-                        UpdateStatus::UpdateErrorOffline => {}
+                        UpdateStatus::UpdateErrorOffline(_) => {}
                         UpdateStatus::Checking => {
                             panic!("Should not receive Checking");
                         }
@@ -209,8 +215,11 @@ impl UpdateApp {
                         );
                         self.render_close_button(ui);
                     }
-                    DownloadStatus::DownloadErrorOffline => {
-                        ui.label(LangMessage::NoConnectionToUpdateServer.to_string(&self.lang));
+                    DownloadStatus::DownloadErrorOffline(e) => {
+                        ui.label(
+                            LangMessage::NoConnectionToUpdateServer(e.to_string())
+                                .to_string(&self.lang),
+                        );
                         self.render_close_button(ui);
                     }
                     DownloadStatus::Downloaded(_) => {}
@@ -226,8 +235,11 @@ impl UpdateApp {
                     );
                     self.render_close_button(ui);
                 }
-                UpdateStatus::UpdateErrorOffline => {
-                    ui.label(LangMessage::NoConnectionToUpdateServer.to_string(&self.lang));
+                UpdateStatus::UpdateErrorOffline(e) => {
+                    ui.label(
+                        LangMessage::NoConnectionToUpdateServer(e.to_string())
+                            .to_string(&self.lang),
+                    );
                     self.render_close_button(ui);
                 }
             }

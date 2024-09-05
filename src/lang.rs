@@ -50,7 +50,7 @@ pub enum LangMessage {
     Launching,
     ErrorCheckingForUpdates(String),
     ErrorDownloadingUpdate(String),
-    NoConnectionToUpdateServer,
+    NoConnectionToUpdateServer(String),
     ErrorReadOnly,
     ProceedToLauncher,
     Authorization,
@@ -254,9 +254,9 @@ impl LangMessage {
                 Lang::English => format!("Error downloading update: {}", e),
                 Lang::Russian => format!("Ошибка загрузки обновления: {}", e),
             },
-            LangMessage::NoConnectionToUpdateServer => match lang {
-                Lang::English => "Error: no connection to the update server".to_string(),
-                Lang::Russian => "Ошибка: нет подключения к серверу обновлений".to_string(),
+            LangMessage::NoConnectionToUpdateServer(e) => match lang {
+                Lang::English => format!("Error: no connection to the update server ({})", e),
+                Lang::Russian => format!("Ошибка: нет подключения к серверу обновлений ({})", e),
             },
             LangMessage::ErrorReadOnly => match lang {
                 Lang::English => {
