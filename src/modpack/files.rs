@@ -83,7 +83,7 @@ pub async fn download_files(
     paths: impl Iterator<Item = PathBuf>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    const MAX_CONCURRENT_DOWNLOADS: usize = 10;
+    let max_concurrent_downloads: usize = num_cpus::get() * 4;
     let client = Client::new();
 
     let urls: Vec<String> = urls.collect();
@@ -99,5 +99,5 @@ pub async fn download_files(
         }
     });
 
-    run_tasks_with_progress(futures, progress_bar, total_size, MAX_CONCURRENT_DOWNLOADS).await
+    run_tasks_with_progress(futures, progress_bar, total_size, max_concurrent_downloads).await
 }
