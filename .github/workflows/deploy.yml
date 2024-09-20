@@ -85,7 +85,18 @@ jobs:
             codesign --force --deep --sign - "app/$DISPLAY_LAUNCHER_NAME.app"
 
             DMG_FILENAME="${DISPLAY_LAUNCHER_NAME}.dmg"
-            hdiutil create "$DMG_FILENAME" -ov -volname "$DISPLAY_LAUNCHER_NAME" -fs HFS+ -srcfolder "app/"
+
+            # CI runner sometimes fails with "hdiutil: create failed - Resource busy", so retry a few times
+            retry=0
+            max_retries=5
+            until [ $retry -ge $max_retries ]
+            do
+              hdiutil create "$DMG_FILENAME" -ov -volname "$DISPLAY_LAUNCHER_NAME" -fs HFS+ -srcfolder "app/" && break
+              retry=$((retry+1))
+              echo "Retrying hdiutil create... ($retry/$max_retries)"
+              sleep 5
+            done
+
             mv "$DMG_FILENAME" launcher/
 
             mv "app/$DISPLAY_LAUNCHER_NAME.app" "app/update.app"
