@@ -62,6 +62,7 @@ pub enum LangMessage {
     CloseLauncherAfterLaunch,
     DownloadAndLaunch,
     CancelLaunch,
+    CancelDownload,
 }
 
 impl LangMessage {
@@ -314,6 +315,10 @@ impl LangMessage {
             LangMessage::CancelLaunch => match lang {
                 Lang::English => "Cancel launch".to_string(),
                 Lang::Russian => "Отменить запуск".to_string(),
+            },
+            LangMessage::CancelDownload => match lang {
+                Lang::English => "Cancel download".to_string(),
+                Lang::Russian => "Отменить загрузку".to_string(),
             },
         }
     }

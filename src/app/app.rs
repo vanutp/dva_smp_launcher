@@ -30,7 +30,7 @@ pub struct LauncherApp {
 pub fn run_gui(config: runtime_config::Config) {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size((350.0, 350.0))
+            .with_inner_size((400.0, 400.0))
             .with_icon(utils::get_icon_data()),
         ..Default::default()
     };
@@ -134,7 +134,10 @@ impl LauncherApp {
                                 self.modpack_sync_state.schedule_sync_if_needed();
                                 self.java_state.schedule_download_if_needed();
                             }
-                            ForceLaunchResult::CancelSelected => {}
+                            ForceLaunchResult::CancelSelected => {
+                                self.java_state.cancel_download();
+                                self.modpack_sync_state.cancel_sync();
+                            }
                             ForceLaunchResult::NotSelected => {}
                         }
                     }

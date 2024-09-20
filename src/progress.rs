@@ -50,6 +50,11 @@ where
 
         async move {
             let _permit = semaphore.acquire().await.unwrap();
+
+            if first_error.lock().unwrap().is_some() {
+                return;
+            }
+
             match task.await {
                 Ok(amount) => {
                     progress_bar.inc(amount);

@@ -63,21 +63,31 @@ fn save_local_index(index_path: &Path, index: ModpackIndex) {
     }
 }
 
+pub struct PathData {
+    pub modpack_dir: PathBuf,
+    pub assets_dir: PathBuf,
+    pub index_path: PathBuf,
+}
+
 pub async fn sync_modpack(
     index: ModpackIndex,
     force_overwrite: bool,
-    modpack_dir: &Path,
-    assets_dir: &Path,
-    index_path: &Path,
+    path_data: PathData,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let PathData {
+        modpack_dir,
+        assets_dir,
+        index_path,
+    } = path_data;
+
     let get_modpack_files = |x| get_files_in_dir(&modpack_dir.join(x));
     let no_overwrite_iter = index
         .include_no_overwrite
         .iter()
         .map(get_modpack_files)
         .flatten();
-    let assets_iter = get_files_in_dir(assets_dir).into_iter();
+    let assets_iter = get_files_in_dir(&assets_dir).into_iter();
 
     let mut abs_path_overwrite: HashSet<PathBuf> = index
         .include
@@ -153,6 +163,6 @@ pub async fn sync_modpack(
     progress_bar.set_message(LangMessage::DownloadingFiles);
     super::files::download_files(urls.into_iter(), paths.into_iter(), progress_bar).await?;
 
-    save_local_index(index_path, index);
+    save_local_index(&index_path, index);
     Ok(())
 }

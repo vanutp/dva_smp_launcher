@@ -1,6 +1,7 @@
 use reqwest::Client;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -33,7 +34,7 @@ async fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 pub async fn hash_files(
     files: impl Iterator<Item = PathBuf>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
-) -> Result<HashMap<PathBuf, String>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<HashMap<PathBuf, String>, Box<dyn Error + Send + Sync>> {
     let hashes = Arc::new(Mutex::new(HashMap::new()));
 
     let files: Vec<PathBuf> = files.collect();
@@ -82,7 +83,7 @@ pub async fn download_files(
     urls: impl Iterator<Item = String>,
     paths: impl Iterator<Item = PathBuf>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let max_concurrent_downloads: usize = num_cpus::get() * 4;
     let client = Client::new();
 

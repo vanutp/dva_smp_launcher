@@ -1,9 +1,9 @@
-use std::path::Path;
 use std::sync::{mpsc, Arc};
 use tokio::runtime::Runtime;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
-use crate::lang::LangMessage;
+use crate::lang::{Lang, LangMessage};
 use crate::modpack::index::{self, ModpackIndex};
 use crate::progress::ProgressBar;
 use crate::utils;
@@ -31,41 +31,40 @@ fn sync_modpack(
     runtime: &Runtime,
     modpack_index: &ModpackIndex,
     force_overwrite: bool,
-    modpack_dir: &Path,
-    assets_dir: &Path,
-    index_path: &Path,
+    path_data: index::PathData,
     progress_bar: Arc<dyn ProgressBar>,
+    cancellation_token: CancellationToken,
 ) -> Task<ModpackSyncResult> {
     progress_bar.set_message(LangMessage::CheckingFiles);
 
     let (tx, rx) = mpsc::channel();
 
     let modpack_index = modpack_index.clone();
-    let modpack_dir = modpack_dir.to_path_buf();
-    let assets_dir = assets_dir.to_path_buf();
-    let index_path = index_path.to_path_buf();
 
     runtime.spawn(async move {
-        let result = match index::sync_modpack(
+        let fut = index::sync_modpack(
             modpack_index,
             force_overwrite,
-            &modpack_dir,
-            &assets_dir,
-            &index_path,
+            path_data,
             progress_bar.clone(),
-        )
-        .await
-        {
-            Ok(()) => ModpackSyncResult {
-                status: ModpackSyncStatus::Synced,
+        );
+
+        let result = tokio::select! {
+            _ = cancellation_token.cancelled() => ModpackSyncResult {
+                status: ModpackSyncStatus::NotSynced,
             },
-            Err(e) => ModpackSyncResult {
-                status: if utils::is_connect_error(&e) {
-                    ModpackSyncStatus::SyncErrorOffline
-                } else {
-                    ModpackSyncStatus::SyncError(e.to_string())
+            res = fut => match res {
+                Ok(()) => ModpackSyncResult {
+                    status: ModpackSyncStatus::Synced,
                 },
-            },
+                Err(e) => ModpackSyncResult {
+                    status: if utils::is_connect_error(&e) {
+                        ModpackSyncStatus::SyncErrorOffline
+                    } else {
+                        ModpackSyncStatus::SyncError(e.to_string())
+                    },
+                },
+            }
         };
 
         let _ = tx.send(result);
@@ -82,6 +81,7 @@ pub struct ModpackSyncState {
     local_indexes: Vec<ModpackIndex>,
     modpack_sync_window_open: bool,
     force_overwrite_checked: bool,
+    cancellation_token: CancellationToken,
 }
 
 pub enum UpdateResult {
@@ -100,6 +100,7 @@ impl ModpackSyncState {
             local_indexes: index::load_local_indexes(&runtime_config::get_index_path(config)),
             modpack_sync_window_open: false,
             force_overwrite_checked: false,
+            cancellation_token: CancellationToken::new(),
         };
     }
 
@@ -151,15 +152,21 @@ impl ModpackSyncState {
                     let assets_dir = runtime_config::get_assets_dir(config);
                     let index_path = runtime_config::get_index_path(config);
 
+                    let path_data = index::PathData {
+                        modpack_dir,
+                        assets_dir,
+                        index_path,
+                    };
+
+                    self.cancellation_token = CancellationToken::new();
                     self.modpack_sync_progress_bar.reset();
                     self.modpack_sync_task = Some(sync_modpack(
                         runtime,
                         selected_index,
                         force_overwrite,
-                        &modpack_dir,
-                        &assets_dir,
-                        &index_path,
+                        path_data,
                         self.modpack_sync_progress_bar.clone(),
+                        self.cancellation_token.clone(),
                     ));
                 }
             }
@@ -168,11 +175,15 @@ impl ModpackSyncState {
         if let Some(task) = self.modpack_sync_task.as_ref() {
             if let Some(result) = task.take_result() {
                 self.status = result.status;
-                self.local_indexes =
-                    index::load_local_indexes(&runtime_config::get_index_path(config));
                 self.modpack_sync_task = None;
                 self.modpack_sync_window_open = false;
-                return UpdateResult::ModpackSynced;
+                if let ModpackSyncStatus::NotSynced = self.status {
+                    // task cancelled
+                } else {
+                    self.local_indexes =
+                        index::load_local_indexes(&runtime_config::get_index_path(config));
+                    return UpdateResult::ModpackSynced;
+                }
             }
         }
         UpdateResult::ModpackNotSynced
@@ -236,8 +247,9 @@ impl ModpackSyncState {
         }
 
         if self.modpack_sync_window_open {
+            let mut modpack_sync_window_open = self.modpack_sync_window_open.clone();
             egui::Window::new(LangMessage::SyncModpack.to_string(&config.lang))
-                .open(&mut self.modpack_sync_window_open)
+                .open(&mut modpack_sync_window_open)
                 .show(ui.ctx(), |ui| {
                     ui.checkbox(
                         &mut self.force_overwrite_checked,
@@ -257,16 +269,32 @@ impl ModpackSyncState {
 
                     if self.modpack_sync_task.is_some() {
                         self.modpack_sync_progress_bar.render(ui, &config.lang);
+                        self.render_cancel_button(ui, &config.lang);
                     }
                 });
+            self.modpack_sync_window_open = modpack_sync_window_open;
         } else {
             if self.modpack_sync_task.is_some() {
                 self.modpack_sync_progress_bar.render(ui, &config.lang);
+                self.render_cancel_button(ui, &config.lang);
             }
         }
     }
 
     pub fn ready_for_launch(&self) -> bool {
         self.status == ModpackSyncStatus::Synced
+    }
+
+    fn render_cancel_button(&mut self, ui: &mut egui::Ui, lang: &Lang) {
+        if ui
+            .button(LangMessage::CancelDownload.to_string(lang))
+            .clicked()
+        {
+            self.cancel_sync();
+        }
+    }
+
+    pub fn cancel_sync(&mut self) {
+        self.cancellation_token.cancel();
     }
 }

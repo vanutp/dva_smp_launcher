@@ -2,9 +2,10 @@ use egui::Widget;
 use std::path::Path;
 use std::sync::{mpsc, Arc};
 use tokio::runtime::Runtime;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
-use crate::lang::LangMessage;
+use crate::lang::{Lang, LangMessage};
 use crate::launcher::java;
 use crate::modpack::index::ModpackIndex;
 use crate::progress::{ProgressBar, Unit};
@@ -32,6 +33,7 @@ pub fn download_java(
     required_version: &str,
     java_dir: &Path,
     progress_bar: Arc<dyn ProgressBar>,
+    cancellation_token: CancellationToken,
 ) -> Task<JavaDownloadResult> {
     progress_bar.set_message(LangMessage::DownloadingJava);
 
@@ -41,8 +43,14 @@ pub fn download_java(
     let java_dir = java_dir.to_path_buf();
 
     runtime.spawn(async move {
-        let result =
-            match java::download_java(&required_version, &java_dir, progress_bar.clone()).await {
+        let fut = java::download_java(&required_version, &java_dir, progress_bar.clone());
+
+        let result = tokio::select! {
+            _ = cancellation_token.cancelled() => JavaDownloadResult {
+                status: JavaDownloadStatus::NotDownloaded,
+                java_installation: None,
+            },
+            res = fut => match res {
                 Ok(java_installation) => JavaDownloadResult {
                     status: JavaDownloadStatus::Downloaded,
                     java_installation: Some(java_installation),
@@ -55,7 +63,8 @@ pub fn download_java(
                     },
                     java_installation: None,
                 },
-            };
+            },
+        };
 
         let _ = tx.send(result);
         progress_bar.finish();
@@ -71,6 +80,7 @@ pub struct JavaState {
     settings_opened: bool,
     picked_java_path: Option<String>,
     selected_xmx: Option<String>,
+    cancellation_token: CancellationToken,
 }
 
 impl JavaState {
@@ -87,6 +97,7 @@ impl JavaState {
             settings_opened: false,
             picked_java_path: None,
             selected_xmx: None,
+            cancellation_token: CancellationToken::new(),
         }
     }
 
@@ -134,13 +145,16 @@ impl JavaState {
 
         if self.status == JavaDownloadStatus::Downloading && self.java_download_task.is_none() {
             let java_dir = runtime_config::get_java_dir(config);
+            self.java_download_progress_bar.reset();
+            self.cancellation_token = CancellationToken::new();
+
             let java_download_task = download_java(
                 runtime,
                 &index.java_version,
                 &java_dir,
                 self.java_download_progress_bar.clone(),
+                self.cancellation_token.clone(),
             );
-            self.java_download_progress_bar.reset();
             self.java_download_task = Some(java_download_task);
         }
 
@@ -225,6 +239,7 @@ impl JavaState {
 
         if self.status == JavaDownloadStatus::Downloading {
             self.java_download_progress_bar.render(ui, &config.lang);
+            self.render_cancel_button(ui, &config.lang);
         }
 
         if self.is_download_needed() {
@@ -309,5 +324,18 @@ impl JavaState {
 
     pub fn ready_for_launch(&self) -> bool {
         self.status == JavaDownloadStatus::Downloaded
+    }
+
+    fn render_cancel_button(&mut self, ui: &mut egui::Ui, lang: &Lang) {
+        if ui
+            .button(LangMessage::CancelDownload.to_string(lang))
+            .clicked()
+        {
+            self.cancel_download();
+        }
+    }
+
+    pub fn cancel_download(&mut self) {
+        self.cancellation_token.cancel();
     }
 }

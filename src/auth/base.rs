@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{error::Error, sync::Arc, future::Future};
+use std::{error::Error, future::Future, sync::Arc};
 
 use super::{elyby::ElyByAuthProvider, telegram::TGAuthProvider};
 use crate::{config::build_config, message_provider::MessageProvider};
@@ -11,8 +11,13 @@ pub struct UserInfo {
 }
 
 pub trait AuthProvider {
-    fn authenticate(&mut self) -> impl Future<Output = Result<String, Box<dyn Error + Send + Sync>>> + Send;
-    fn get_user_info(&self, token: &str) -> impl Future<Output = Result<UserInfo, Box<dyn Error + Send + Sync>>> + Send;
+    fn authenticate(
+        &mut self,
+    ) -> impl Future<Output = Result<String, Box<dyn Error + Send + Sync>>> + Send;
+    fn get_user_info(
+        &self,
+        token: &str,
+    ) -> impl Future<Output = Result<UserInfo, Box<dyn Error + Send + Sync>>> + Send;
 }
 
 pub enum AuthProviderEnum {
