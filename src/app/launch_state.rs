@@ -33,7 +33,7 @@ impl LaunchState {
         &mut self,
         runtime: &Runtime,
         config: &runtime_config::Config,
-        selected_modpack: ModpackIndex,
+        selected_modpack: &ModpackIndex,
         online: bool,
     ) {
         match runtime.block_on(launch::launch(selected_modpack, config, online)) {
@@ -100,7 +100,7 @@ impl LaunchState {
                         .clicked()
                 {
                     self.force_launch = false;
-                    self.launch(runtime, config, selected_modpack.clone(), online);
+                    self.launch(runtime, config, selected_modpack, online);
                 }
 
                 self.render_close_launcher_checkbox(ui, config);

@@ -4,8 +4,16 @@ pub fn get_launcher_name() -> String {
     LAUNCHER_NAME.to_string()
 }
 
-pub fn get_server_base() -> String {
+fn get_server_base() -> String {
     SERVER_BASE.to_string()
+}
+
+pub fn get_modpacks_base() -> String {
+    format!("{}/modpacks", get_server_base())
+}
+
+pub fn get_launcher_base() -> String {
+    format!("{}/launcher", get_server_base())
 }
 
 pub fn get_tgauth_base() -> Option<String> {

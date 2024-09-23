@@ -23,7 +23,9 @@ pub enum LangMessage {
     SelectModpack,
     NoIndexes,
     CheckingFiles,
-    DownloadingFiles,
+    DownloadingModpackFiles,
+    CheckingAssets,
+    DownloadingAssets,
     SyncModpack,
     ModpackNotSynced,
     SyncingModpack,
@@ -141,9 +143,17 @@ impl LangMessage {
                 Lang::English => "Checking files...".to_string(),
                 Lang::Russian => "Проверка файлов...".to_string(),
             },
-            LangMessage::DownloadingFiles => match lang {
-                Lang::English => "Downloading files...".to_string(),
-                Lang::Russian => "Загрузка файлов...".to_string(),
+            LangMessage::DownloadingModpackFiles => match lang {
+                Lang::English => "Downloading modpack files...".to_string(),
+                Lang::Russian => "Загрузка файлов модпака...".to_string(),
+            },
+            LangMessage::CheckingAssets => match lang {
+                Lang::English => "Checking assets...".to_string(),
+                Lang::Russian => "Проверка ресурсов...".to_string(),
+            },
+            LangMessage::DownloadingAssets => match lang {
+                Lang::English => "Downloading assets...".to_string(),
+                Lang::Russian => "Загрузка ресурсов...".to_string(),
             },
             LangMessage::SyncModpack => match lang {
                 Lang::English => "Sync modpack".to_string(),

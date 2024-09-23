@@ -1,14 +1,13 @@
 use reqwest::Client;
 use sha1::{Digest, Sha1};
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::fs as async_fs;
 use tokio::io::AsyncWriteExt;
 
-use crate::progress::{run_tasks_with_progress, ProgressBar, TaskFutureResult};
+use crate::progress::{run_tasks_with_progress, ProgressBar};
 
 pub fn get_files_in_dir(path: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -26,7 +25,7 @@ pub fn get_files_in_dir(path: &Path) -> Vec<PathBuf> {
     files
 }
 
-async fn hash_file(path: &Path) -> Result<String, std::io::Error> {
+pub async fn hash_file(path: &Path) -> Result<String, Box<dyn Error + Send + Sync>> {
     let data = async_fs::read(path).await?;
     Ok(format!("{:x}", Sha1::digest(&data)))
 }
@@ -34,42 +33,29 @@ async fn hash_file(path: &Path) -> Result<String, std::io::Error> {
 pub async fn hash_files(
     files: impl Iterator<Item = PathBuf>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
-) -> Result<HashMap<PathBuf, String>, Box<dyn Error + Send + Sync>> {
-    let hashes = Arc::new(Mutex::new(HashMap::new()));
-
+) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
     let files: Vec<PathBuf> = files.collect();
     let tasks_count = files.len() as u64;
 
-    let tasks = files.into_iter().map(|path| {
-        let hashes = Arc::clone(&hashes);
+    let tasks = files
+        .into_iter()
+        .map(|path| async move { hash_file(&path).await });
 
-        async move {
-            let result = hash_file(&path).await;
-            match result {
-                Ok(hash) => {
-                    let mut hashes = hashes.lock().unwrap();
-                    hashes.insert(path, hash);
-                    TaskFutureResult::Ok(1)
-                }
-                Err(e) => TaskFutureResult::Err(e.into()),
-            }
-        }
-    });
-
-    run_tasks_with_progress(tasks, progress_bar, tasks_count, num_cpus::get()).await?;
-
-    let hashes = Arc::try_unwrap(hashes)
-        .expect("Arc unwrap failed")
-        .into_inner();
-    Ok(hashes.unwrap())
+    run_tasks_with_progress(tasks, progress_bar, tasks_count, num_cpus::get()).await
 }
 
-async fn download_file(
+pub async fn download_file(
     client: &Client,
     url: &str,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let response = client.get(url).send().await?.bytes().await?;
+    let response = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
 
     let parent_dir = path.parent().expect("Invalid file path");
     async_fs::create_dir_all(parent_dir).await?;
@@ -92,11 +78,44 @@ pub async fn download_files(
 
     let futures = urls.into_iter().zip(paths).map(|(url, path)| {
         let client = client.clone();
+        async move { download_file(&client, &url, &path).await }
+    });
+
+    run_tasks_with_progress(futures, progress_bar, total_size, max_concurrent_downloads).await?;
+    Ok(())
+}
+
+pub async fn fetch_file(
+    client: &Client,
+    url: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?
+        .to_vec())
+}
+
+pub async fn fetch_files(
+    urls: impl Iterator<Item = String>,
+    progress_bar: Arc<dyn ProgressBar + Send + Sync>,
+) -> Result<Vec<Vec<u8>>, Box<dyn Error + Send + Sync>> {
+    let max_concurrent_downloads: usize = num_cpus::get() * 4;
+    let client = Client::new();
+
+    let urls: Vec<String> = urls.collect();
+    let total_size = urls.len() as u64;
+
+    let futures = urls.into_iter().map(|url| {
+        let client = client.clone();
         async move {
-            if let Err(e) = download_file(&client, &url, &path).await {
-                return TaskFutureResult::Err(e);
+            match fetch_file(&client, &url).await {
+                Ok(data) => Ok(data),
+                Err(e) => Err(e),
             }
-            Ok(1)
         }
     });
 

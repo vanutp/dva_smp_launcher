@@ -12,15 +12,15 @@ use crate::utils;
 
 #[cfg(target_os = "windows")]
 lazy_static::lazy_static! {
-    static ref VERSION_URL: String = format!("{}/launcher/version_windows.txt", build_config::get_server_base());
+    static ref VERSION_URL: String = format!("{}/version_windows.txt", build_config::get_launcher_base());
 }
 #[cfg(target_os = "linux")]
 lazy_static::lazy_static! {
-    static ref VERSION_URL: String = format!("{}/launcher/version_linux.txt", build_config::get_server_base());
+    static ref VERSION_URL: String = format!("{}/version_linux.txt", build_config::get_launcher_base());
 }
 #[cfg(target_os = "macos")]
 lazy_static::lazy_static! {
-    static ref VERSION_URL: String = format!("{}/launcher/version_macos.txt", build_config::get_server_base());
+    static ref VERSION_URL: String = format!("{}/version_macos.txt", build_config::get_launcher_base());
 }
 
 #[cfg(target_os = "windows")]
@@ -37,7 +37,7 @@ lazy_static::lazy_static! {
 }
 
 lazy_static::lazy_static! {
-    static ref UPDATE_URL: String = format!("{}/launcher/{}", build_config::get_server_base(), *LAUNCHER_FILE_NAME);
+    static ref UPDATE_URL: String = format!("{}/{}", build_config::get_launcher_base(), *LAUNCHER_FILE_NAME);
 }
 
 async fn fetch_new_version() -> Result<String, Box<dyn Error + Send + Sync>> {

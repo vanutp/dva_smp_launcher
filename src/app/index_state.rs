@@ -130,21 +130,24 @@ impl IndexState {
         });
 
         let selected_modpack_name = config.modpack_name.clone();
-        let mut just_selected_modpack: Option<&ModpackIndex> = None;
+        let mut just_selected_modpack: Option<&str> = None;
 
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_source("modpacks")
                 .selected_text(
                     selected_modpack_name
+                        .clone()
                         .unwrap_or_else(|| LangMessage::SelectModpack.to_string(&config.lang)),
                 )
                 .show_ui(ui, |ui| match self.indexes.as_ref() {
                     Some(r) => {
-                        for index in r {
+                        let modpack_names: Vec<&str> =
+                            r.iter().map(|x| x.modpack_name.as_str()).collect();
+                        for modpack_name in modpack_names {
                             ui.selectable_value(
                                 &mut just_selected_modpack,
-                                Some(index),
-                                index.modpack_name.clone(),
+                                Some(modpack_name),
+                                modpack_name,
                             );
                         }
                     }
@@ -163,12 +166,8 @@ impl IndexState {
             }
         });
 
-        let just_selected_modpack = just_selected_modpack.map(|x| x.clone());
-        let just_selected_modpack_name = just_selected_modpack
-            .as_ref()
-            .map(|x| x.modpack_name.clone());
-        if just_selected_modpack != None && config.modpack_name != just_selected_modpack_name {
-            config.modpack_name = just_selected_modpack_name;
+        if just_selected_modpack.is_some() && config.modpack_name != selected_modpack_name {
+            config.modpack_name = selected_modpack_name;
             runtime_config::save_config(config);
             UpdateResult::IndexesUpdated
         } else {

@@ -4,7 +4,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
-use crate::modpack::index::{self, ModpackIndex};
+use crate::modpack::{
+    index::{self, ModpackIndex},
+    sync,
+};
 use crate::progress::ProgressBar;
 use crate::utils;
 
@@ -31,7 +34,7 @@ fn sync_modpack(
     runtime: &Runtime,
     modpack_index: &ModpackIndex,
     force_overwrite: bool,
-    path_data: index::PathData,
+    path_data: sync::PathData,
     progress_bar: Arc<dyn ProgressBar>,
     cancellation_token: CancellationToken,
 ) -> Task<ModpackSyncResult> {
@@ -42,8 +45,8 @@ fn sync_modpack(
     let modpack_index = modpack_index.clone();
 
     runtime.spawn(async move {
-        let fut = index::sync_modpack(
-            modpack_index,
+        let fut = sync::sync_modpack(
+            &modpack_index,
             force_overwrite,
             path_data,
             progress_bar.clone(),
@@ -152,7 +155,7 @@ impl ModpackSyncState {
                     let assets_dir = runtime_config::get_assets_dir(config);
                     let index_path = runtime_config::get_index_path(config);
 
-                    let path_data = index::PathData {
+                    let path_data = sync::PathData {
                         modpack_dir,
                         assets_dir,
                         index_path,
