@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 use crate::config::build_config;
 use crate::constants;
 use std::error::Error;
@@ -65,5 +67,21 @@ pub fn get_icon_data() -> egui::IconData {
         width,
         height,
         rgba,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum SingleOrVec<T> {
+    Single(T),
+    Vec(Vec<T>),
+}
+
+impl<T> From<SingleOrVec<T>> for Vec<T> {
+    fn from(single_or_vec: SingleOrVec<T>) -> Vec<T> {
+        match single_or_vec {
+            SingleOrVec::Single(single) => vec![single],
+            SingleOrVec::Vec(vec) => vec,
+        }
     }
 }

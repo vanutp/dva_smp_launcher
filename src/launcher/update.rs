@@ -12,15 +12,15 @@ use crate::utils;
 
 #[cfg(target_os = "windows")]
 lazy_static::lazy_static! {
-    static ref VERSION_URL: String = format!("{}/version_windows.txt", build_config::get_launcher_base());
+    static ref VERSION_URL: Option<String> = build_config::get_auto_update_base().map(|url| format!("{}/version_windows.txt", url));
 }
 #[cfg(target_os = "linux")]
 lazy_static::lazy_static! {
-    static ref VERSION_URL: String = format!("{}/version_linux.txt", build_config::get_launcher_base());
+    static ref VERSION_URL: Option<String> = build_config::get_auto_update_base().map(|url| format!("{}/version_linux.txt", url));
 }
 #[cfg(target_os = "macos")]
 lazy_static::lazy_static! {
-    static ref VERSION_URL: String = format!("{}/version_macos.txt", build_config::get_launcher_base());
+    static ref VERSION_URL: Option<String> = build_config::get_auto_update_base().map(|url| format!("{}/version_macos.txt", url));
 }
 
 #[cfg(target_os = "windows")]
@@ -37,14 +37,27 @@ lazy_static::lazy_static! {
 }
 
 lazy_static::lazy_static! {
-    static ref UPDATE_URL: String = format!("{}/{}", build_config::get_launcher_base(), *LAUNCHER_FILE_NAME);
+    static ref UPDATE_URL: Option<String> = match build_config::get_auto_update_base() {
+        Some(url) => Some(format!("{}/{}", url, &*LAUNCHER_FILE_NAME)),
+        _ => None,
+    };
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum UpdateError {
+    #[error("Auto update URL not set")]
+    AutoUpdateUrlNotSet,
 }
 
 async fn fetch_new_version() -> Result<String, Box<dyn Error + Send + Sync>> {
-    let client = Client::new();
-    let response = client.get(&*VERSION_URL).send().await?.error_for_status()?;
-    let text = response.text().await?;
-    Ok(text.trim().to_string())
+    if let Some(update_url) = &*UPDATE_URL {
+        let client = Client::new();
+        let response = client.get(update_url).send().await?.error_for_status()?;
+        let text = response.text().await?;
+        Ok(text.trim().to_string())
+    } else {
+        Err(Box::new(UpdateError::AutoUpdateUrlNotSet))
+    }
 }
 
 pub async fn need_update() -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -56,12 +69,13 @@ pub async fn need_update() -> Result<bool, Box<dyn Error + Send + Sync>> {
 pub async fn download_new_launcher(
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
 ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+    if UPDATE_URL.is_none() {
+        return Err(Box::new(UpdateError::AutoUpdateUrlNotSet));
+    }
+    let update_url = UPDATE_URL.as_ref().unwrap();
+
     let client = Client::new();
-    let response = client
-        .get(UPDATE_URL.as_str())
-        .send()
-        .await?
-        .error_for_status()?;
+    let response = client.get(update_url).send().await?.error_for_status()?;
 
     let total_size = response.content_length().unwrap_or(0);
     progress_bar.set_length(total_size);

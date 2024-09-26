@@ -1,5 +1,6 @@
 use reqwest::Client;
 use sha1::{Digest, Sha1};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,10 +32,9 @@ pub async fn hash_file(path: &Path) -> Result<String, Box<dyn Error + Send + Syn
 }
 
 pub async fn hash_files(
-    files: impl Iterator<Item = PathBuf>,
+    files: Vec<PathBuf>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
 ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-    let files: Vec<PathBuf> = files.collect();
     let tasks_count = files.len() as u64;
 
     let tasks = files
@@ -65,20 +65,23 @@ pub async fn download_file(
     Ok(())
 }
 
+pub struct DownloadEntry {
+    pub url: String,
+    pub path: PathBuf,
+}
+
 pub async fn download_files(
-    urls: impl Iterator<Item = String>,
-    paths: impl Iterator<Item = PathBuf>,
+    download_entries: Vec<DownloadEntry>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let max_concurrent_downloads: usize = num_cpus::get() * 4;
     let client = Client::new();
 
-    let urls: Vec<String> = urls.collect();
-    let total_size = urls.len() as u64;
+    let total_size = download_entries.len() as u64;
 
-    let futures = urls.into_iter().zip(paths).map(|(url, path)| {
+    let futures = download_entries.into_iter().map(|entry| {
         let client = client.clone();
-        async move { download_file(&client, &url, &path).await }
+        async move { download_file(&client, &entry.url, &entry.path).await }
     });
 
     run_tasks_with_progress(futures, progress_bar, total_size, max_concurrent_downloads).await?;
@@ -100,13 +103,12 @@ pub async fn fetch_file(
 }
 
 pub async fn fetch_files(
-    urls: impl Iterator<Item = String>,
+    urls: Vec<String>,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
 ) -> Result<Vec<Vec<u8>>, Box<dyn Error + Send + Sync>> {
     let max_concurrent_downloads: usize = num_cpus::get() * 4;
     let client = Client::new();
 
-    let urls: Vec<String> = urls.collect();
     let total_size = urls.len() as u64;
 
     let futures = urls.into_iter().map(|url| {
@@ -120,4 +122,57 @@ pub async fn fetch_files(
     });
 
     run_tasks_with_progress(futures, progress_bar, total_size, max_concurrent_downloads).await
+}
+
+pub struct CheckDownloadEntry {
+    pub url: String,
+    pub remote_sha1: Option<String>,
+    pub path: PathBuf,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum CheckDownloadError {
+    #[error("Hash of file {0} is missing")]
+    HashMissing(PathBuf),
+}
+
+pub async fn get_download_entries(
+    check_entries: Vec<CheckDownloadEntry>,
+    progress_bar: Arc<dyn ProgressBar + Send + Sync>,
+) -> Result<Vec<DownloadEntry>, Box<dyn Error + Send + Sync>> {
+    let to_hash: Vec<_> = check_entries
+        .iter()
+        .filter_map(|entry| {
+            if entry.path.exists() && entry.remote_sha1.is_some() {
+                Some(entry.path.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let hashes = hash_files(to_hash.clone(), progress_bar.clone()).await?;
+    let hashes = to_hash
+        .into_iter()
+        .zip(hashes.into_iter())
+        .map(|(path, hash)| (path, hash))
+        .collect::<HashMap<_, _>>();
+
+    let mut download_entries = Vec::new();
+    for entry in check_entries {
+        if !entry.path.exists()
+            || entry.remote_sha1.is_none()
+            || &entry.remote_sha1.unwrap()
+                != hashes
+                    .get(&entry.path)
+                    .ok_or(CheckDownloadError::HashMissing(entry.path.clone()))?
+        {
+            download_entries.push(DownloadEntry {
+                url: entry.url.clone(),
+                path: entry.path.clone(),
+            });
+        }
+    }
+
+    Ok(download_entries)
 }

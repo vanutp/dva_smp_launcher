@@ -60,7 +60,8 @@ fn get_installation(path: &Path) -> Option<JavaInstallation> {
 }
 
 fn does_match(java: &JavaInstallation, required_version: &str) -> bool {
-    java.version.starts_with(&format!("{}.", required_version))
+    java.version.starts_with(&format!("{}", required_version))
+        || java.version.starts_with(&format!("1.{}", required_version))
 }
 
 pub fn check_java(required_version: &str, path: &Path) -> bool {

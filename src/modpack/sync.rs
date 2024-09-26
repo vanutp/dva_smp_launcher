@@ -1,158 +1,217 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use reqwest::Client;
 
+use crate::files::CheckDownloadEntry;
 use crate::lang::LangMessage;
 use crate::progress::ProgressBar;
 use crate::{files, progress};
 
-use super::index::{self, ModpackIndex};
+use super::complete_version_metadata::CompleteVersionMetadata;
+use super::extra_version_metadata::ExtraVersionMetadata;
 use super::{asset_metadata, version_metadata};
-
-pub struct PathData {
-    pub modpack_dir: PathBuf,
-    pub assets_dir: PathBuf,
-    pub index_path: PathBuf,
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum VersionMetadataError {
     #[error("Library {0} has neither SHA1 hash nor SHA1 URL")]
     NoSha1(String),
-    #[error("Library {0} has no download URL")]
-    NoUrl(String),
+    #[error("Missing client download")]
+    MissingClientDownload,
 }
 
-async fn download_assets_and_libraries(
+async fn get_objects_downloads(
+    extra_version_metadata: &ExtraVersionMetadata,
+    force_overwrite: bool,
+    modpack_dir: &Path,
+) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    let objects = &extra_version_metadata.objects;
+    let include = &extra_version_metadata.include;
+    let include_no_overwrite = &extra_version_metadata.include_no_overwrite;
+
+    let get_modpack_files = |x| files::get_files_in_dir(&modpack_dir.join(x));
+    let no_overwrite_iter = include_no_overwrite.iter().map(get_modpack_files).flatten();
+    let mut to_overwrite: HashSet<PathBuf> =
+        include.iter().map(get_modpack_files).flatten().collect();
+    let mut no_overwrite = HashSet::new();
+    if !force_overwrite {
+        no_overwrite.extend(no_overwrite_iter);
+    } else {
+        to_overwrite.extend(no_overwrite_iter);
+    }
+
+    // Remove files that are in both no_overwrite and overwrite
+    // e.g. config folder is in no_overwrite but config/<filename>.json is in overwrite
+    no_overwrite.retain(|x| !to_overwrite.contains(x));
+
+    let mut download_entries = vec![];
+    for object in objects.iter() {
+        let object_path = modpack_dir.join(&object.path);
+
+        if no_overwrite.contains(&object_path) {
+            continue;
+        }
+        download_entries.push(CheckDownloadEntry {
+            url: object.url.clone(),
+            remote_sha1: Some(object.sha1.clone()),
+            path: object_path,
+        });
+    }
+
+    Ok(download_entries)
+}
+
+async fn need_index_download(
     asset_index: &version_metadata::AssetIndex,
     assets_dir: &Path,
-    resources_url_base: &str,
-    libraries_dir: &Path,
-    libraries: &Vec<version_metadata::Library>,
-    progress_bar: Arc<dyn ProgressBar + Send + Sync>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut urls: Vec<String> = vec![];
-    let mut paths: Vec<PathBuf> = vec![];
-
-    progress_bar.set_message(LangMessage::CheckingAssets);
-
-    let asset_index_path = assets_dir.join("indexes").join(&asset_index.id);
-    let need_assets_download: bool;
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let asset_index_path = assets_dir
+        .join("indexes")
+        .join(format!("{}.json", asset_index.id));
     if !asset_index_path.exists() {
-        need_assets_download = true;
-    } else {
-        let local_asset_index_hash = files::hash_file(&asset_index_path).await?;
-        need_assets_download = local_asset_index_hash != asset_index.sha1;
+        return Ok(true);
     }
 
-    if need_assets_download {
-        let client = Client::new();
-        files::download_file(&client, &asset_index.url, &asset_index_path).await?;
-        let asset_metadata = asset_metadata::read_asset_metadata(&asset_index_path).await?;
+    let local_asset_index_hash = files::hash_file(&asset_index_path).await?;
+    Ok(local_asset_index_hash != asset_index.sha1)
+}
 
-        for (hash, object) in asset_metadata.objects.iter() {
-            let object_path = assets_dir.join("objects").join(&hash[..2]).join(hash);
-            let need_download: bool;
-            if !object_path.exists() {
-                need_download = true;
-            } else {
-                let local_object_hash = files::hash_file(&object_path).await?;
-                need_download = local_object_hash != object.hash;
-            }
+async fn get_assets_downloads(
+    asset_metadata: &asset_metadata::AssetsMetadata,
+    assets_dir: &Path,
+    resources_url_base: &str,
+) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut download_entries = vec![];
 
-            if need_download {
-                urls.push(format!(
-                    "{}/objects/{}/{}",
-                    resources_url_base,
-                    &hash[..2],
-                    hash
-                ));
-                paths.push(object_path);
-            }
+    download_entries.extend(asset_metadata.objects.iter().map(|(_, object)| {
+        CheckDownloadEntry {
+            url: format!(
+                "{}/{}/{}",
+                resources_url_base,
+                &object.hash[..2],
+                object.hash
+            ),
+            remote_sha1: Some(object.hash.clone()),
+            path: assets_dir
+                .join("objects")
+                .join(&object.hash[..2])
+                .join(&object.hash),
         }
-    }
+    }));
 
-    let existing_libraries_paths: Vec<PathBuf> = libraries
-        .iter()
-        .map(|x| libraries_dir.join(x.get_path()))
-        .filter(|x| x.exists())
-        .collect();
-    let libraries_hashes = files::hash_files(
-        existing_libraries_paths.clone().into_iter(),
-        progress_bar.clone(),
-    )
-    .await?;
-    let libraries_hashes: HashMap<PathBuf, String> = existing_libraries_paths
-        .into_iter()
-        .zip(libraries_hashes.into_iter())
-        .collect();
+    Ok(download_entries)
+}
 
-    let mut remote_libraries_hashes: HashMap<PathBuf, String> = libraries
-        .iter()
-        .filter_map(|x| {
-            x.get_sha1()
-                .map(|url| (libraries_dir.join(x.get_path()), url))
-        })
-        .collect();
-
-    let existing_libraries_with_missing_hashes: Vec<&version_metadata::Library> = libraries
-        .iter()
-        .filter(|x| {
-            let path = libraries_dir.join(x.get_path());
-            !remote_libraries_hashes.contains_key(&path) && !libraries_hashes.contains_key(&path)
-        })
-        .collect();
-    if !existing_libraries_with_missing_hashes.is_empty() {
-        let sha1_urls = existing_libraries_with_missing_hashes
-            .iter()
-            .map(|x| {
-                x.get_sha1_url()
-                    .ok_or_else(|| VersionMetadataError::NoSha1(x.name.clone()))
-            })
-            .collect::<Result<Vec<String>, _>>()?;
-        let fetched_hashes = files::fetch_files(sha1_urls.into_iter(), progress::no_progress_bar())
-            .await?
-            .into_iter()
-            .map(|x| String::from_utf8(x))
-            .collect::<Result<Vec<String>, _>>()?;
-
-        remote_libraries_hashes.extend(
-            existing_libraries_with_missing_hashes
-                .iter()
-                .map(|x| libraries_dir.join(x.get_path()))
-                .zip(fetched_hashes.into_iter()),
-        );
-    }
+async fn get_libraries_downloads(
+    libraries: &Vec<version_metadata::Library>,
+    libraries_dir: &Path,
+) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut sha1_urls = HashMap::<PathBuf, String>::new();
+    let mut check_download_entries: Vec<CheckDownloadEntry> = Vec::new();
 
     for library in libraries.iter() {
-        let library_path = libraries_dir.join(library.get_path());
-        let need_download: bool;
-        match libraries_hashes.get(&library_path) {
-            Some(hash) => need_download = hash != &remote_libraries_hashes[&library_path],
-            None => need_download = true,
-        }
-        if need_download {
-            urls.push(
-                library
-                    .get_url()
-                    .ok_or(VersionMetadataError::NoUrl(library.name.clone()))?,
-            );
-            paths.push(library_path);
+        let entries = library.get_check_download_entries(libraries_dir);
+        for entry in entries {
+            if entry.remote_sha1.is_some() || !entry.path.exists() {
+                check_download_entries.push(entry);
+            } else {
+                match library.get_sha1_url() {
+                    Some(sha1_url) => {
+                        sha1_urls.insert(entry.path.clone(), sha1_url);
+                        check_download_entries.push(CheckDownloadEntry {
+                            remote_sha1: None,
+                            ..entry
+                        });
+                    }
+                    None => {
+                        return Err(Box::new(VersionMetadataError::NoSha1(
+                            entry.path.to_str().unwrap_or("no path").to_string(),
+                        )));
+                    }
+                }
+            }
         }
     }
 
-    if !urls.is_empty() {
-        progress_bar.set_message(LangMessage::DownloadingAssets);
-        files::download_files(urls.into_iter(), paths.into_iter(), progress_bar.clone()).await?;
+    let missing_hash_urls: Vec<String> = sha1_urls.values().cloned().collect();
+    let remote_hashes = files::fetch_files(missing_hash_urls, progress::no_progress_bar()).await?;
+    let remote_hashes: Vec<String> = remote_hashes
+        .into_iter()
+        .map(|x| String::from_utf8(x))
+        .collect::<Result<_, _>>()?;
+    let missing_hashes: HashMap<PathBuf, String> =
+        sha1_urls.into_keys().zip(remote_hashes).collect();
+
+    let check_download_entries: Vec<_> = check_download_entries
+        .into_iter()
+        .map(|entry| {
+            if entry.remote_sha1.is_none() {
+                let sha1 = missing_hashes.get(&entry.path);
+                if let Some(sha1) = sha1 {
+                    Ok(CheckDownloadEntry {
+                        remote_sha1: Some(sha1.clone()),
+                        ..entry
+                    })
+                } else {
+                    Err(Box::new(VersionMetadataError::NoSha1(
+                        entry.path.to_str().unwrap_or("no path").to_string(),
+                    )))
+                }
+            } else {
+                Ok(entry)
+            }
+        })
+        .collect::<Result<_, _>>()?;
+
+    Ok(check_download_entries)
+}
+
+fn get_client_download_entry(
+    version_metadata: &CompleteVersionMetadata,
+    versions_dir: &Path,
+) -> Result<CheckDownloadEntry, Box<dyn std::error::Error + Send + Sync>> {
+    let is_overridden;
+    if let Some(extra) = &version_metadata.extra {
+        is_overridden = extra.client_download_override.is_some();
+    } else {
+        is_overridden = false;
     }
-    Ok(())
+
+    let client_download = if is_overridden {
+        version_metadata
+            .extra
+            .as_ref()
+            .unwrap()
+            .client_download_override
+            .as_ref()
+            .unwrap()
+    } else {
+        version_metadata
+            .base
+            .downloads
+            .as_ref()
+            .ok_or(VersionMetadataError::MissingClientDownload)?
+            .client
+            .as_ref()
+            .ok_or(VersionMetadataError::MissingClientDownload)?
+    };
+
+    Ok(CheckDownloadEntry {
+        url: client_download.url.clone(),
+        remote_sha1: Some(client_download.sha1.clone()),
+        path: version_metadata.base.get_client_jar_path(versions_dir),
+    })
+}
+
+pub struct PathData {
+    pub modpack_dir: PathBuf,
+    pub assets_dir: PathBuf,
+    pub versions_dir: PathBuf,
 }
 
 pub async fn sync_modpack(
-    index: &ModpackIndex,
+    version_metadata: &CompleteVersionMetadata,
     force_overwrite: bool,
     path_data: PathData,
     progress_bar: Arc<dyn ProgressBar + Send + Sync>,
@@ -160,91 +219,55 @@ pub async fn sync_modpack(
     let PathData {
         modpack_dir,
         assets_dir,
-        index_path,
+        versions_dir,
     } = path_data;
 
-    let get_modpack_files = |x| files::get_files_in_dir(&modpack_dir.join(x));
-    let no_overwrite_iter = index
-        .include_no_overwrite
-        .iter()
-        .map(get_modpack_files)
-        .flatten();
-    let mut abs_path_overwrite: HashSet<PathBuf> = index
-        .include
-        .iter()
-        .map(get_modpack_files)
-        .flatten()
-        .collect();
-    let mut abs_path_no_overwrite = HashSet::new();
-    if !force_overwrite {
-        abs_path_no_overwrite.extend(no_overwrite_iter);
+    let mut check_download_entries = vec![];
+
+    if let Some(extra) = &version_metadata.extra {
+        check_download_entries
+            .extend(get_objects_downloads(extra, force_overwrite, &modpack_dir).await?);
+    }
+
+    let asset_index = &version_metadata.base.asset_index;
+    let asset_metadata;
+    let needed_index_download = need_index_download(asset_index, &assets_dir).await?;
+    if needed_index_download {
+        let client = Client::new();
+        asset_metadata = asset_metadata::fetch_asset_metadata(&client, &asset_index.url).await?;
     } else {
-        abs_path_overwrite.extend(no_overwrite_iter);
+        asset_metadata = asset_metadata::read_asset_metadata(&asset_index.id, &assets_dir).await?;
     }
 
-    // Remove files that are in both no_overwrite and overwrite
-    // e.g. config folder is in no_overwrite but config/<filename>.json is in overwrite
-    abs_path_no_overwrite.retain(|x| !abs_path_overwrite.contains(x));
+    check_download_entries.extend(
+        get_assets_downloads(
+            &asset_metadata,
+            &assets_dir,
+            version_metadata.get_resources_url_base(),
+        )
+        .await?,
+    );
 
-    let abs_path_overwrite_hashes =
-        files::hash_files(abs_path_overwrite.clone().into_iter(), progress_bar.clone()).await?;
-    let abs_path_overwrite_hashes: HashMap<PathBuf, String> = abs_path_overwrite
-        .clone()
-        .into_iter()
-        .zip(abs_path_overwrite_hashes.into_iter())
-        .collect();
+    check_download_entries.extend(
+        get_libraries_downloads(
+            &version_metadata.base.libraries,
+            &modpack_dir.join("libraries"),
+        )
+        .await?,
+    );
 
-    let mut urls: Vec<String> = vec![];
-    let mut paths: Vec<PathBuf> = vec![];
+    check_download_entries.push(get_client_download_entry(version_metadata, &versions_dir)?);
 
-    let objects_filepaths: HashSet<PathBuf> = index
-        .objects
-        .iter()
-        .map(|x| modpack_dir.join(&x.path))
-        .collect();
+    progress_bar.set_message(LangMessage::CheckingFiles);
+    let download_entries =
+        files::get_download_entries(check_download_entries, progress_bar.clone()).await?;
 
-    for path in abs_path_overwrite.iter() {
-        if !objects_filepaths.contains(path) {
-            fs::remove_file(path)?;
-        }
-    }
-    for object in index.objects.iter() {
-        let object_path = modpack_dir.join(&object.path);
+    progress_bar.set_message(LangMessage::DownloadingFiles);
+    files::download_files(download_entries, progress_bar).await?;
 
-        if abs_path_no_overwrite.contains(&object_path) {
-            continue;
-        }
-        let need_download: bool;
-        match abs_path_overwrite_hashes.get(&object_path) {
-            Some(hash) => need_download = hash != &object.sha1,
-            None => need_download = true,
-        }
-        if need_download {
-            urls.push(object.url.clone());
-            paths.push(object_path);
-        }
+    if needed_index_download {
+        asset_metadata::save_asset_metadata(&asset_index.id, &asset_metadata, &assets_dir).await?;
     }
 
-    progress_bar.set_message(LangMessage::DownloadingModpackFiles);
-    files::download_files(urls.into_iter(), paths.into_iter(), progress_bar.clone()).await?;
-
-    let version_dir = modpack_dir.join("version");
-    let merged_version_metadata = version_metadata::get_merged_metadata(&version_dir).await?;
-
-    let asset_index = &merged_version_metadata.asset_index;
-    let libraries_dir = modpack_dir.join("libraries");
-    let libraries = &merged_version_metadata.libraries;
-
-    download_assets_and_libraries(
-        &asset_index,
-        &assets_dir,
-        index.get_resources_url_base(),
-        &libraries_dir,
-        libraries,
-        progress_bar,
-    )
-    .await?;
-
-    index::save_local_index(&index_path, index);
     Ok(())
 }

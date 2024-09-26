@@ -1,9 +1,11 @@
-use std::{path::PathBuf, sync::mpsc};
+use std::{path::Path, sync::mpsc};
 
 use crate::{
     config::runtime_config,
     lang::LangMessage,
-    modpack::index::{load_local_indexes, load_remote_indexes, ModpackIndex},
+    modpack::version_manifest::{
+        fetch_version_manifest, load_local_version_manifest_safe, VersionInfo, VersionManifest,
+    },
 };
 
 use super::task::Task;
@@ -16,26 +18,27 @@ enum FetchStatus {
     FetchedLocalOffline,
 }
 
-struct IndexFetchResult {
+struct ManifestFetchResult {
     status: FetchStatus,
-    indexes: Vec<ModpackIndex>,
+    manifest: VersionManifest,
 }
 
-fn fetch_indexes<Callback>(
+fn fetch_manifest<Callback>(
     runtime: &tokio::runtime::Runtime,
-    index_path: PathBuf,
+    manifest_path: &Path,
     callback: Callback,
-) -> Task<IndexFetchResult>
+) -> Task<ManifestFetchResult>
 where
     Callback: FnOnce() + Send + 'static,
 {
     let (tx, rx) = mpsc::channel();
+    let manifest_path = manifest_path.to_path_buf();
 
     runtime.spawn(async move {
-        let indexes = match load_remote_indexes().await {
-            Ok(i) => IndexFetchResult {
+        let manifest = match fetch_version_manifest().await {
+            Ok(manifest) => ManifestFetchResult {
                 status: FetchStatus::FetchedRemote,
-                indexes: i,
+                manifest: manifest,
             },
             Err(e) => {
                 let mut connect_error = false;
@@ -45,42 +48,42 @@ where
                     }
                 }
 
-                IndexFetchResult {
+                ManifestFetchResult {
                     status: if connect_error {
                         FetchStatus::FetchedLocalOffline
                     } else {
                         FetchStatus::FetchedLocalRemoteError(e.to_string())
                     },
-                    indexes: load_local_indexes(&index_path),
+                    manifest: load_local_version_manifest_safe(&manifest_path).await,
                 }
             }
         };
 
-        let _ = tx.send(indexes);
+        let _ = tx.send(manifest);
         callback();
     });
 
     return Task::new(rx);
 }
 
-pub struct IndexState {
+pub struct ManifestState {
     status: FetchStatus,
-    fetch_task: Option<Task<IndexFetchResult>>,
-    indexes: Option<Vec<ModpackIndex>>,
+    fetch_task: Option<Task<ManifestFetchResult>>,
+    manifest: Option<VersionManifest>,
 }
 
 #[derive(PartialEq)]
 pub enum UpdateResult {
-    IndexesNotUpdated,
-    IndexesUpdated,
+    ManifestNotUpdated,
+    ManifestUpdated,
 }
 
-impl IndexState {
+impl ManifestState {
     pub fn new() -> Self {
-        return IndexState {
+        return ManifestState {
             status: FetchStatus::Fetching,
             fetch_task: None,
-            indexes: None,
+            manifest: None,
         };
     }
 
@@ -91,9 +94,9 @@ impl IndexState {
         ctx: &egui::Context,
     ) -> UpdateResult {
         if self.status == FetchStatus::Fetching && self.fetch_task.is_none() {
-            let index_path = runtime_config::get_index_path(config);
+            let manifest_path = runtime_config::get_manifest_path(config);
             let ctx = ctx.clone();
-            self.fetch_task = Some(fetch_indexes(runtime, index_path.clone(), move || {
+            self.fetch_task = Some(fetch_manifest(runtime, &manifest_path, move || {
                 ctx.request_repaint();
             }));
         }
@@ -101,16 +104,17 @@ impl IndexState {
         if let Some(task) = self.fetch_task.as_ref() {
             if let Some(result) = task.take_result() {
                 self.status = result.status.clone();
-                if config.modpack_name.is_none() && result.indexes.len() == 1 {
-                    config.modpack_name = result.indexes.first().map(|x| x.modpack_name.clone());
+                if config.selected_modpack_id.is_none() && result.manifest.versions.len() == 1 {
+                    config.selected_modpack_id =
+                        result.manifest.versions.first().map(|x| x.id.clone());
                     runtime_config::save_config(config);
                 }
-                self.indexes = Some(result.indexes.clone());
+                self.manifest = Some(result.manifest);
                 self.fetch_task = None;
-                return UpdateResult::IndexesUpdated;
+                return UpdateResult::ManifestUpdated;
             }
         }
-        UpdateResult::IndexesNotUpdated
+        UpdateResult::ManifestNotUpdated
     }
 
     pub fn render_ui(
@@ -119,19 +123,19 @@ impl IndexState {
         config: &mut runtime_config::Config,
     ) -> UpdateResult {
         ui.label(match self.status {
-            FetchStatus::Fetching => LangMessage::FetchingModpackIndexes.to_string(&config.lang),
-            FetchStatus::FetchedRemote => LangMessage::FetchedRemoteIndexes.to_string(&config.lang),
+            FetchStatus::Fetching => LangMessage::FetchingVersionManifest.to_string(&config.lang),
+            FetchStatus::FetchedRemote => {
+                LangMessage::FetchedRemoteManifest.to_string(&config.lang)
+            }
             FetchStatus::FetchedLocalOffline => {
-                LangMessage::NoConnectionToIndexServer.to_string(&config.lang)
+                LangMessage::NoConnectionToManifestServer.to_string(&config.lang)
             }
             FetchStatus::FetchedLocalRemoteError(ref s) => {
-                LangMessage::ErrorFetchingRemoteIndexes(s.clone()).to_string(&config.lang)
+                LangMessage::ErrorFetchingRemoteManifest(s.clone()).to_string(&config.lang)
             }
         });
 
-        let selected_modpack_name = config.modpack_name.clone();
-        let mut just_selected_modpack: Option<&str> = None;
-
+        let mut selected_modpack_name = config.selected_modpack_id.clone();
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_source("modpacks")
                 .selected_text(
@@ -139,26 +143,26 @@ impl IndexState {
                         .clone()
                         .unwrap_or_else(|| LangMessage::SelectModpack.to_string(&config.lang)),
                 )
-                .show_ui(ui, |ui| match self.indexes.as_ref() {
+                .show_ui(ui, |ui| match self.manifest.as_ref() {
                     Some(r) => {
-                        let modpack_names: Vec<&str> =
-                            r.iter().map(|x| x.modpack_name.as_str()).collect();
+                        let modpack_names: Vec<String> =
+                            r.versions.iter().map(|x| x.id.clone()).collect();
                         for modpack_name in modpack_names {
                             ui.selectable_value(
-                                &mut just_selected_modpack,
-                                Some(modpack_name),
+                                &mut selected_modpack_name,
+                                Some(modpack_name.clone()),
                                 modpack_name,
                             );
                         }
                     }
                     None => {
-                        ui.label(LangMessage::NoIndexes.to_string(&config.lang));
+                        ui.label(LangMessage::NoModpacks.to_string(&config.lang));
                     }
                 });
 
             if self.status != FetchStatus::FetchedRemote && self.status != FetchStatus::Fetching {
                 if ui
-                    .button(LangMessage::FetchIndexes.to_string(&config.lang))
+                    .button(LangMessage::FetchManifest.to_string(&config.lang))
                     .clicked()
                 {
                     self.status = FetchStatus::Fetching;
@@ -166,20 +170,21 @@ impl IndexState {
             }
         });
 
-        if just_selected_modpack.is_some() && config.modpack_name != selected_modpack_name {
-            config.modpack_name = selected_modpack_name;
+        if config.selected_modpack_id != selected_modpack_name {
+            config.selected_modpack_id = selected_modpack_name;
             runtime_config::save_config(config);
-            UpdateResult::IndexesUpdated
+            UpdateResult::ManifestUpdated
         } else {
-            UpdateResult::IndexesNotUpdated
+            UpdateResult::ManifestNotUpdated
         }
     }
 
-    pub fn get_selected_modpack(&self, config: &runtime_config::Config) -> Option<&ModpackIndex> {
-        return self.indexes.as_ref().and_then(|indexes| {
-            indexes
+    pub fn get_selected_modpack(&self, config: &runtime_config::Config) -> Option<&VersionInfo> {
+        return self.manifest.as_ref().and_then(|manifest| {
+            manifest
+                .versions
                 .iter()
-                .find(|x| Some(&x.modpack_name) == config.modpack_name.as_ref())
+                .find(|x| Some(&x.id) == config.selected_modpack_id.as_ref())
         });
     }
 

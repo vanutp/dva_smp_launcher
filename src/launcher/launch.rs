@@ -7,7 +7,7 @@ use tokio::process::{Child, Command as TokioCommand};
 use crate::auth::elyby::ELY_BY_BASE;
 use crate::config::runtime_config::{get_assets_dir, get_minecraft_dir, Config};
 use crate::config::{build_config, runtime_config};
-use crate::modpack::index::ModpackIndex;
+use crate::modpack::complete_version_metadata::CompleteVersionMetadata;
 use crate::modpack::version_metadata;
 
 use super::compat;
@@ -56,42 +56,53 @@ fn process_args(
     options
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum LaunchError {
+    #[error("Invalid path {0}")]
+    InvalidPath(PathBuf),
+}
+
 pub async fn launch(
-    modpack_index: &ModpackIndex,
+    version_metadata: &CompleteVersionMetadata,
     config: &Config,
     online: bool,
 ) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
-    let mut minecraft_dir = get_minecraft_dir(&config, &modpack_index.modpack_name);
+    let base_version_metadata = &version_metadata.base;
+
+    let mut minecraft_dir = get_minecraft_dir(&config, &base_version_metadata.id);
     let libraries_dir = minecraft_dir.join("libraries");
     let minecraft_dir_short = minecraft_dir.clone();
     if cfg!(windows) {
         minecraft_dir = PathBuf::from(compat::win_get_long_path_name(
-            minecraft_dir_short.to_str().unwrap(),
+            minecraft_dir_short
+                .to_str()
+                .ok_or(Box::new(LaunchError::InvalidPath(
+                    minecraft_dir_short.clone(),
+                )))?,
         )?);
     }
     fs::create_dir_all(minecraft_dir.join("natives")).await?;
 
-    let version_metadata =
-        version_metadata::get_merged_metadata(&minecraft_dir.join("versions")).await?;
-
     let mut classpath = vec![];
-    for library in &version_metadata.libraries {
-        if library.apply_rules() {
-            classpath.push(
-                libraries_dir
-                    .join(library.get_path())
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            );
-        }
+    for library in &base_version_metadata.libraries {
+        classpath.extend(
+            library
+                .get_paths(&libraries_dir)
+                .into_iter()
+                .map(|p| {
+                    p.to_str()
+                        .ok_or(Box::new(LaunchError::InvalidPath(p.clone())))
+                        .map(|x| x.to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        )
     }
+
+    let modpacks_dir = runtime_config::get_modpacks_dir(config);
     classpath.push(
-        minecraft_dir
-            .join(&format!(
-                "versions/{}/{}.jar",
-                version_metadata.id, version_metadata.id
-            ))
+        version_metadata
+            .base
+            .get_client_jar_path(&modpacks_dir.join("versions"))
             .to_str()
             .unwrap()
             .to_string(),
@@ -110,10 +121,10 @@ pub async fn launch(
         "classpath_separator".to_string() => PATHSEP.to_string(),
         "library_directory".to_string() => libraries_dir.to_str().unwrap().to_string(),
         "auth_player_name".to_string() => config.user_info.as_ref().unwrap().username.clone(),
-        "version_name".to_string() => version_metadata.id.clone(),
+        "version_name".to_string() => base_version_metadata.id.clone(),
         "game_directory".to_string() => minecraft_dir.to_str().unwrap().to_string(),
         "assets_root".to_string() => get_assets_dir(&config).to_str().unwrap().to_string(),
-        "assets_index_name".to_string() => version_metadata.asset_index.id.clone(),
+        "assets_index_name".to_string() => base_version_metadata.asset_index.id.clone(),
         "auth_uuid".to_string() => config.user_info.as_ref().unwrap().uuid.replace("-", ""),
         "auth_access_token".to_string() => config.token.as_ref().unwrap().clone(),
         "clientid".to_string() => "".to_string(),
@@ -162,7 +173,7 @@ pub async fn launch(
     }
 
     java_options.extend(process_args(
-        &version_metadata
+        &base_version_metadata
             .arguments
             .jvm
             .iter()
@@ -171,7 +182,7 @@ pub async fn launch(
         &variables,
     ));
     let minecraft_options = process_args(
-        &version_metadata
+        &base_version_metadata
             .arguments
             .game
             .iter()
@@ -183,12 +194,17 @@ pub async fn launch(
     let mut cmd = TokioCommand::new(
         config
             .java_paths
-            .get(&modpack_index.modpack_name)
-            .unwrap()
+            .get(&base_version_metadata.id)
+            .ok_or_else(|| {
+                format!(
+                    "Java path for version {} not found",
+                    base_version_metadata.id
+                )
+            })?
             .clone(),
     );
     cmd.args(&java_options)
-        .arg(&version_metadata.main_class)
+        .arg(&base_version_metadata.main_class)
         .args(&minecraft_options)
         .current_dir(minecraft_dir_short);
 

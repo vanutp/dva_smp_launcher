@@ -15,17 +15,19 @@ pub enum LangMessage {
     AuthorizedAs(String),
     Authorizing,
     Authorize,
-    FetchingModpackIndexes,
-    FetchedRemoteIndexes,
-    NoConnectionToIndexServer,
-    ErrorFetchingRemoteIndexes(String),
-    FetchIndexes,
+    FetchingVersionManifest,
+    FetchedRemoteManifest,
+    NoConnectionToManifestServer,
+    ErrorFetchingRemoteManifest(String),
+    FetchManifest,
     SelectModpack,
-    NoIndexes,
+    NoModpacks,
+    GettingVersionMetadata,
+    NoConnectionToMetadataServer,
+    ErrorGettingRemoteMetadata(String),
+    ErrorGettingMetadata(String),
     CheckingFiles,
-    DownloadingModpackFiles,
-    CheckingAssets,
-    DownloadingAssets,
+    DownloadingFiles,
     SyncModpack,
     ModpackNotSynced,
     SyncingModpack,
@@ -65,6 +67,7 @@ pub enum LangMessage {
     DownloadAndLaunch,
     CancelLaunch,
     CancelDownload,
+    Retry,
 }
 
 impl LangMessage {
@@ -111,23 +114,23 @@ impl LangMessage {
                 Lang::English => "Authorize".to_string(),
                 Lang::Russian => "Авторизоваться".to_string(),
             },
-            LangMessage::FetchingModpackIndexes => match lang {
+            LangMessage::FetchingVersionManifest => match lang {
                 Lang::English => "Fetching modpack list...".to_string(),
                 Lang::Russian => "Получение списка модпаков...".to_string(),
             },
-            LangMessage::FetchedRemoteIndexes => match lang {
+            LangMessage::FetchedRemoteManifest => match lang {
                 Lang::English => "Modpack list fetched".to_string(),
                 Lang::Russian => "Список модпаков получен".to_string(),
             },
-            LangMessage::NoConnectionToIndexServer => match lang {
+            LangMessage::NoConnectionToManifestServer => match lang {
                 Lang::English => "Error: no connection to the modpack server".to_string(),
                 Lang::Russian => "Ошибка: нет подключения к серверу модпаков".to_string(),
             },
-            LangMessage::ErrorFetchingRemoteIndexes(s) => match lang {
+            LangMessage::ErrorFetchingRemoteManifest(s) => match lang {
                 Lang::English => format!("Error fetching remote modpack list: {}", s),
                 Lang::Russian => format!("Ошибка получения списка модпаков с сервера: {}", s),
             },
-            LangMessage::FetchIndexes => match lang {
+            LangMessage::FetchManifest => match lang {
                 Lang::English => "Fetch modpack list".to_string(),
                 Lang::Russian => "Получить список модпаков".to_string(),
             },
@@ -135,25 +138,33 @@ impl LangMessage {
                 Lang::English => "Select modpack".to_string(),
                 Lang::Russian => "Выберите модпак".to_string(),
             },
-            LangMessage::NoIndexes => match lang {
+            LangMessage::NoModpacks => match lang {
                 Lang::English => "No modpacks fetched".to_string(),
                 Lang::Russian => "Список модпаков пуст".to_string(),
+            },
+            LangMessage::GettingVersionMetadata => match lang {
+                Lang::English => "Getting version metadata...".to_string(),
+                Lang::Russian => "Получение метаданных версии...".to_string(),
+            }
+            LangMessage::NoConnectionToMetadataServer => match lang {
+                Lang::English => "Error: no connection to the version metadata server".to_string(),
+                Lang::Russian => "Ошибка: нет подключения к серверу метаданных версии".to_string(),
+            },
+            LangMessage::ErrorGettingRemoteMetadata(s) => match lang {
+                Lang::English => format!("Error getting remote version metadata: {}", s),
+                Lang::Russian => format!("Ошибка получения метаданных версии с сервера: {}", s),
+            },
+            LangMessage::ErrorGettingMetadata(s) => match lang {
+                Lang::English => format!("Error getting version metadata: {}", s),
+                Lang::Russian => format!("Ошибка получения метаданных версии: {}", s),
             },
             LangMessage::CheckingFiles => match lang {
                 Lang::English => "Checking files...".to_string(),
                 Lang::Russian => "Проверка файлов...".to_string(),
             },
-            LangMessage::DownloadingModpackFiles => match lang {
-                Lang::English => "Downloading modpack files...".to_string(),
-                Lang::Russian => "Загрузка файлов модпака...".to_string(),
-            },
-            LangMessage::CheckingAssets => match lang {
-                Lang::English => "Checking assets...".to_string(),
-                Lang::Russian => "Проверка ресурсов...".to_string(),
-            },
-            LangMessage::DownloadingAssets => match lang {
-                Lang::English => "Downloading assets...".to_string(),
-                Lang::Russian => "Загрузка ресурсов...".to_string(),
+            LangMessage::DownloadingFiles => match lang {
+                Lang::English => "Downloading files...".to_string(),
+                Lang::Russian => "Загрузка файлов...".to_string(),
             },
             LangMessage::SyncModpack => match lang {
                 Lang::English => "Sync modpack".to_string(),
@@ -329,6 +340,10 @@ impl LangMessage {
             LangMessage::CancelDownload => match lang {
                 Lang::English => "Cancel download".to_string(),
                 Lang::Russian => "Отменить загрузку".to_string(),
+            },
+            LangMessage::Retry => match lang {
+                Lang::English => "Retry".to_string(),
+                Lang::Russian => "Попробовать снова".to_string(),
             },
         }
     }

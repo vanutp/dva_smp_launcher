@@ -4,51 +4,32 @@ pub fn get_launcher_name() -> String {
     LAUNCHER_NAME.to_string()
 }
 
-fn get_server_base() -> String {
-    SERVER_BASE.to_string()
+pub fn get_version_manifest_url() -> String {
+    VERSION_MANIFEST_URL.to_string()
 }
 
-pub fn get_modpacks_base() -> String {
-    format!("{}/modpacks", get_server_base())
-}
-
-pub fn get_launcher_base() -> String {
-    format!("{}/launcher", get_server_base())
+pub fn get_auto_update_base() -> Option<String> {
+    AUTO_UPDATE_BASE.map(|url| url.to_string())
 }
 
 pub fn get_tgauth_base() -> Option<String> {
-    match TGAUTH_BASE {
-        Some(base) => Some(base.to_string()),
-        None => None,
-    }
+    TGAUTH_BASE.map(|base| base.to_string())
 }
 
 pub fn get_elyby_app_name() -> Option<String> {
-    match ELYBY_APP_NAME {
-        Some(app_name) => Some(app_name.to_string()),
-        None => None,
-    }
+    ELYBY_APP_NAME.map(|app_name| app_name.to_string())
 }
 
 pub fn get_elyby_client_id() -> Option<String> {
-    match ELYBY_CLIENT_ID {
-        Some(client_id) => Some(client_id.to_string()),
-        None => None,
-    }
+    ELYBY_CLIENT_ID.map(|client_id| client_id.to_string())
 }
 
 pub fn get_elyby_client_secret() -> Option<String> {
-    match ELYBY_CLIENT_SECRET {
-        Some(client_secret) => Some(client_secret.to_string()),
-        None => None,
-    }
+    ELYBY_CLIENT_SECRET.map(|client_secret| client_secret.to_string())
 }
 
 pub fn get_version() -> Option<String> {
-    match VERSION {
-        Some(version) => Some(version.to_string()),
-        None => None,
-    }
+    VERSION.map(|version| version.to_string())
 }
 
 pub fn get_display_launcher_name() -> String {

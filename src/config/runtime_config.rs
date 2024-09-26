@@ -13,7 +13,7 @@ pub struct Config {
     pub assets_dir: Option<String>,
     pub data_dir: Option<String>,
     pub xmx: String,
-    pub modpack_name: Option<String>,
+    pub selected_modpack_id: Option<String>,
     pub lang: Lang,
     pub close_launcher_after_launch: bool,
 }
@@ -44,20 +44,28 @@ pub fn get_assets_dir(config: &Config) -> PathBuf {
     assets_dir
 }
 
+pub fn get_modpacks_dir(config: &Config) -> PathBuf {
+    let modpacks_dir = get_data_dir(config).join("modpacks");
+    if !modpacks_dir.exists() {
+        std::fs::create_dir_all(&modpacks_dir).expect("Failed to create modpacks directory");
+    }
+    modpacks_dir
+}
+
 pub fn get_minecraft_dir(config: &Config, modpack_name: &String) -> PathBuf {
-    let minecraft_dir = get_data_dir(config).join("modpacks").join(modpack_name);
+    let minecraft_dir = get_modpacks_dir(config).join(modpack_name);
     if !minecraft_dir.exists() {
         std::fs::create_dir_all(&minecraft_dir).expect("Failed to create minecraft directory");
     }
     minecraft_dir
 }
 
-pub fn get_index_path(config: &Config) -> PathBuf {
+pub fn get_manifest_path(config: &Config) -> PathBuf {
     let modpacks_path = get_data_dir(config).join("modpacks");
     if !modpacks_path.exists() {
         std::fs::create_dir_all(&modpacks_path).expect("Failed to create modpacks directory");
     }
-    modpacks_path.join("index.json")
+    modpacks_path.join("version_manifest.json")
 }
 
 fn get_config_path() -> PathBuf {
@@ -94,7 +102,7 @@ pub fn load_config() -> Config {
         assets_dir: None,
         data_dir: None,
         xmx: String::from(constants::DEFAULT_JAVA_XMX),
-        modpack_name: None,
+        selected_modpack_id: None,
         lang: constants::DEFAULT_LANG,
         close_launcher_after_launch: true,
     };

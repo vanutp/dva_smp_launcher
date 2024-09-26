@@ -4,10 +4,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
-use crate::modpack::{
-    index::{self, ModpackIndex},
-    sync,
-};
+use crate::modpack::complete_version_metadata::CompleteVersionMetadata;
+use crate::modpack::sync;
+use crate::modpack::version_manifest::{self, VersionInfo, VersionManifest};
 use crate::progress::ProgressBar;
 use crate::utils;
 
@@ -32,7 +31,7 @@ struct ModpackSyncResult {
 
 fn sync_modpack(
     runtime: &Runtime,
-    modpack_index: &ModpackIndex,
+    modpack_metadata: Arc<CompleteVersionMetadata>,
     force_overwrite: bool,
     path_data: sync::PathData,
     progress_bar: Arc<dyn ProgressBar>,
@@ -42,11 +41,11 @@ fn sync_modpack(
 
     let (tx, rx) = mpsc::channel();
 
-    let modpack_index = modpack_index.clone();
+    let modpack_metadata = modpack_metadata.clone();
 
     runtime.spawn(async move {
         let fut = sync::sync_modpack(
-            &modpack_index,
+            &modpack_metadata,
             force_overwrite,
             path_data,
             progress_bar.clone(),
@@ -81,58 +80,58 @@ pub struct ModpackSyncState {
     status: ModpackSyncStatus,
     modpack_sync_task: Option<Task<ModpackSyncResult>>,
     modpack_sync_progress_bar: Arc<GuiProgressBar>,
-    local_indexes: Vec<ModpackIndex>,
+    local_version_manifest: VersionManifest,
     modpack_sync_window_open: bool,
     force_overwrite_checked: bool,
     cancellation_token: CancellationToken,
 }
 
 pub enum UpdateResult {
-    ModpackSynced,
+    ModpackSyncComplete,
     ModpackNotSynced,
 }
 
 impl ModpackSyncState {
-    pub fn new(ctx: &egui::Context, config: &runtime_config::Config) -> Self {
+    pub async fn new(ctx: &egui::Context, config: &runtime_config::Config) -> Self {
         let modpack_sync_progress_bar = Arc::new(GuiProgressBar::new(ctx));
 
         return ModpackSyncState {
             status: ModpackSyncStatus::NotSynced,
             modpack_sync_task: None,
             modpack_sync_progress_bar,
-            local_indexes: index::load_local_indexes(&runtime_config::get_index_path(config)),
+            local_version_manifest: version_manifest::load_local_version_manifest_safe(
+                &runtime_config::get_manifest_path(config),
+            )
+            .await,
             modpack_sync_window_open: false,
             force_overwrite_checked: false,
             cancellation_token: CancellationToken::new(),
         };
     }
 
-    fn is_up_to_date(&self, selected_index: &ModpackIndex) -> bool {
-        if let Some(local_index) = self
-            .local_indexes
+    fn is_up_to_date(&self, selected_version: &VersionInfo) -> bool {
+        self.local_version_manifest
+            .versions
             .iter()
-            .find(|i| i.modpack_name == selected_index.modpack_name)
-        {
-            return local_index.modpack_version == selected_index.modpack_version;
-        }
-
-        return false;
+            .find(|i| i.id == selected_version.id)
+            .is_some()
     }
 
     pub fn update(
         &mut self,
         runtime: &Runtime,
-        selected_index: &ModpackIndex,
+        selected_version_info: &VersionInfo,
+        selected_version_metadata: Arc<CompleteVersionMetadata>,
         config: &runtime_config::Config,
         need_modpack_check: bool,
-        index_online: bool,
+        online_manifest: bool,
     ) -> UpdateResult {
         if need_modpack_check {
             self.status = ModpackSyncStatus::NotSynced;
         }
 
         if self.status == ModpackSyncStatus::NotSynced {
-            if self.is_up_to_date(selected_index) && index_online {
+            if self.is_up_to_date(selected_version_info) && online_manifest {
                 self.status = ModpackSyncStatus::Synced;
             }
         }
@@ -144,28 +143,28 @@ impl ModpackSyncState {
         {
             if self.modpack_sync_task.is_none() {
                 if !ignore_version {
-                    if self.is_up_to_date(selected_index) {
+                    if self.is_up_to_date(selected_version_info) {
                         self.status = ModpackSyncStatus::Synced;
                     }
                 }
 
                 if self.status != ModpackSyncStatus::Synced {
                     let modpack_dir =
-                        runtime_config::get_minecraft_dir(config, &selected_index.modpack_name);
+                        runtime_config::get_minecraft_dir(config, &selected_version_info.id);
                     let assets_dir = runtime_config::get_assets_dir(config);
-                    let index_path = runtime_config::get_index_path(config);
+                    let versions_dir = runtime_config::get_modpacks_dir(config).join("versions");
+
+                    self.cancellation_token = CancellationToken::new();
+                    self.modpack_sync_progress_bar.reset();
 
                     let path_data = sync::PathData {
                         modpack_dir,
                         assets_dir,
-                        index_path,
+                        versions_dir,
                     };
-
-                    self.cancellation_token = CancellationToken::new();
-                    self.modpack_sync_progress_bar.reset();
                     self.modpack_sync_task = Some(sync_modpack(
                         runtime,
-                        selected_index,
+                        selected_version_metadata,
                         force_overwrite,
                         path_data,
                         self.modpack_sync_progress_bar.clone(),
@@ -180,12 +179,22 @@ impl ModpackSyncState {
                 self.status = result.status;
                 self.modpack_sync_task = None;
                 self.modpack_sync_window_open = false;
-                if let ModpackSyncStatus::NotSynced = self.status {
-                    // task cancelled
-                } else {
-                    self.local_indexes =
-                        index::load_local_indexes(&runtime_config::get_index_path(config));
-                    return UpdateResult::ModpackSynced;
+
+                if self.status == ModpackSyncStatus::Synced {
+                    self.local_version_manifest
+                        .versions
+                        .retain(|i| i.id == selected_version_info.id);
+                    self.local_version_manifest
+                        .versions
+                        .push(selected_version_info.clone());
+                    let _ = runtime.block_on(version_manifest::save_local_version_manifest(
+                        &self.local_version_manifest,
+                        &runtime_config::get_manifest_path(config),
+                    ));
+                }
+
+                if self.status != ModpackSyncStatus::NotSynced {
+                    return UpdateResult::ModpackSyncComplete;
                 }
             }
         }
@@ -215,7 +224,7 @@ impl ModpackSyncState {
         &mut self,
         ui: &mut egui::Ui,
         config: &mut runtime_config::Config,
-        index_online: bool,
+        manifest_online: bool,
     ) {
         ui.label(match &self.status {
             ModpackSyncStatus::NotSynced => LangMessage::ModpackNotSynced.to_string(&config.lang),
@@ -232,7 +241,7 @@ impl ModpackSyncState {
             }
         });
 
-        if !index_online {
+        if !manifest_online {
             return;
         }
         if ui

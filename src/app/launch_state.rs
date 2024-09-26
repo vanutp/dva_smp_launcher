@@ -1,7 +1,8 @@
 use tokio::{process::Child, runtime::Runtime};
 
 use crate::{
-    config::runtime_config, lang::LangMessage, launcher::launch, modpack::index::ModpackIndex,
+    config::runtime_config, lang::LangMessage, launcher::launch,
+    modpack::complete_version_metadata::CompleteVersionMetadata,
 };
 
 enum LauncherStatus {
@@ -33,7 +34,7 @@ impl LaunchState {
         &mut self,
         runtime: &Runtime,
         config: &runtime_config::Config,
-        selected_modpack: &ModpackIndex,
+        selected_modpack: &CompleteVersionMetadata,
         online: bool,
     ) {
         match runtime.block_on(launch::launch(selected_modpack, config, online)) {
@@ -80,7 +81,7 @@ impl LaunchState {
         runtime: &Runtime,
         ui: &mut egui::Ui,
         config: &mut runtime_config::Config,
-        selected_modpack: &ModpackIndex,
+        selected_modpack: &CompleteVersionMetadata,
         online: bool,
     ) {
         match &mut self.status {

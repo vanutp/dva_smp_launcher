@@ -2,15 +2,16 @@ use std::env;
 use std::fs;
 
 fn main() {
-    let build_envs = ["LAUNCHER_NAME", "SERVER_BASE"];
+    let build_envs = ["LAUNCHER_NAME", "VERSION_MANIFEST_URL"];
 
     let optional_envs = [
         "TGAUTH_BASE",
         "ELYBY_APP_NAME",
         "ELYBY_CLIENT_ID",
         "ELYBY_CLIENT_SECRET",
-        "VERSION",
         "DISPLAY_LAUNCHER_NAME",
+        "VERSION",
+        "AUTO_UPDATE_BASE",
     ];
 
     let out_dir = env::var("OUT_DIR").unwrap();

@@ -1,19 +1,26 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     error::Error,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use serde::Deserialize;
 use tokio::{fs, io::AsyncReadExt as _};
 
-#[derive(Deserialize)]
+use crate::{
+    files::{self, CheckDownloadEntry},
+    progress,
+};
+
+use super::version_manifest::VersionInfo;
+
+#[derive(Deserialize, Clone)]
 pub struct GameRule {
     pub action: String,
     pub features: HashMap<String, bool>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ArgumentValue {
     String(String),
@@ -29,35 +36,50 @@ impl ArgumentValue {
     }
 }
 
-#[derive(Deserialize)]
-pub struct Os {
-    pub name: Option<String>,
+fn get_metadata_os_name() -> String {
+    if cfg!(windows) {
+        "windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "osx".to_string()
+    } else if cfg!(target_os = "linux") {
+        "linux".to_string()
+    } else {
+        unimplemented!("Unsupported OS");
+    }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
+struct Os {
+    name: Option<String>,
+    arch: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
 pub struct Rule {
-    pub action: String,
-    pub os: Os,
+    action: String,
+    os: Option<Os>,
 }
 
 impl Rule {
-    pub fn match_os(&self) -> bool {
-        if let Some(name) = &self.os.name {
-            let os_matches = match name.as_str() {
-                "osx" => cfg!(target_os = "macos"),
-                "windows" => cfg!(windows),
-                "linux" => cfg!(target_os = "linux"),
-                _ => false,
-            };
-            let allow = self.action == "allow";
-            os_matches == allow
-        } else {
+    pub fn is_allowed(&self) -> bool {
+        let allow = self.action == "allow";
+        if let Some(os) = &self.os {
+            if let Some(name) = &os.name {
+                let os_matches = name == &get_metadata_os_name();
+                return os_matches == allow;
+            }
+            if let Some(arch) = &os.arch {
+                let arch_matches = arch == std::env::consts::ARCH;
+                return arch_matches == allow;
+            }
             true
+        } else {
+            allow
         }
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ComplexArgument<R> {
     pub value: ArgumentValue,
     pub rules: Vec<R>,
@@ -68,7 +90,7 @@ pub trait Argument {
     fn get_values(&self) -> Vec<&str>;
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(untagged)]
 pub enum VariableArgument<R> {
     Simple(String),
@@ -114,7 +136,7 @@ impl Argument for VariableArgument<Rule> {
             VariableArgument::Simple(_) => true,
             VariableArgument::Complex(complex) => {
                 for rule in &complex.rules {
-                    if !rule.match_os() {
+                    if !rule.is_allowed() {
                         return false;
                     }
                 }
@@ -128,7 +150,7 @@ impl Argument for VariableArgument<Rule> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Arguments {
     pub game: Vec<VariableArgument<GameRule>>,
     pub jvm: Vec<VariableArgument<Rule>>,
@@ -141,11 +163,11 @@ pub struct AssetIndex {
     pub url: String,
 }
 
-// #[derive(Deserialize)]
-// pub struct JavaVersion {
-//     #[serde(rename = "majorVersion")]
-//     pub major_version: i64,
-// }
+#[derive(Deserialize)]
+pub struct JavaVersion {
+    #[serde(rename = "majorVersion")]
+    pub major_version: u64,
+}
 
 #[derive(Deserialize)]
 pub struct Download {
@@ -155,24 +177,26 @@ pub struct Download {
 }
 
 #[derive(Deserialize)]
-pub struct LibraryDownload {
-    pub artifact: Download,
+pub struct LibraryDownloads {
+    pub artifact: Option<Download>,
+    pub classifiers: Option<HashMap<String, Download>>,
 }
 
 #[derive(Deserialize)]
 pub struct Library {
-    pub name: String,
-    pub downloads: Option<LibraryDownload>,
-    pub rules: Option<Vec<Rule>>,
-    pub url: Option<String>,
-    pub sha1: Option<String>,
+    name: String,
+    downloads: Option<LibraryDownloads>,
+    rules: Option<Vec<Rule>>,
+    url: Option<String>,
+    sha1: Option<String>,
+    natives: Option<HashMap<String, String>>,
 }
 
 impl Library {
-    pub fn apply_rules(&self) -> bool {
+    fn apply_rules(&self) -> bool {
         if let Some(rules) = &self.rules {
             for rule in rules {
-                if !rule.match_os() {
+                if !rule.is_allowed() {
                     return false;
                 }
             }
@@ -180,59 +204,118 @@ impl Library {
         true
     }
 
-    pub fn get_path(&self) -> String {
-        if let Some(downloads) = &self.downloads {
-            downloads.artifact.path.clone()
+    pub fn get_path_from_name(&self) -> String {
+        let full_name = self.name.clone();
+        let mut parts: Vec<&str> = full_name.split(':').collect();
+        if parts.len() != 4 {
+            parts.push("");
+        }
+        let (pkg, name, version, suffix) = (parts[0], parts[1], parts[2], parts[3]);
+        let pkg_path = pkg.replace('.', "/");
+        let suffix = if suffix.is_empty() {
+            "".to_string()
         } else {
-            let full_name = self.name.clone();
-            let mut parts: Vec<&str> = full_name.split(':').collect();
-            if parts.len() != 4 {
-                parts.push("");
+            format!("-{}", suffix)
+        };
+        format!(
+            "{}/{}/{}/{}-{}{}.jar",
+            pkg_path, name, version, name, version, suffix
+        )
+    }
+
+    fn get_natives_name(&self) -> Option<String> {
+        let os_name = get_metadata_os_name();
+        self.natives.as_ref()?.get(&os_name).cloned()
+    }
+
+    pub fn get_check_download_entries(&self, libraries_dir: &Path) -> Vec<CheckDownloadEntry> {
+        let mut entries = vec![];
+
+        if self.apply_rules() {
+            if let Some(downloads) = &self.downloads {
+                if let Some(artifact) = &downloads.artifact {
+                    entries.push(CheckDownloadEntry {
+                        url: artifact.url.clone(),
+                        remote_sha1: Some(artifact.sha1.clone()),
+                        path: libraries_dir.join(&artifact.path),
+                    });
+                }
+            } else if let Some(url) = &self.url {
+                entries.push(CheckDownloadEntry {
+                    url: url.clone(),
+                    remote_sha1: self.sha1.clone(),
+                    path: libraries_dir.join(&self.get_path_from_name()),
+                });
             }
-            let (pkg, name, version, suffix) = (parts[0], parts[1], parts[2], parts[3]);
-            let pkg_path = pkg.replace('.', "/");
-            let suffix = if suffix.is_empty() {
-                "".to_string()
+        }
+
+        if let Some(classifiers) = self.downloads.as_ref().and_then(|d| d.classifiers.as_ref()) {
+            if let Some(natives_name) = self.get_natives_name() {
+                if let Some(natives_download) = classifiers.get(&natives_name) {
+                    entries.push(CheckDownloadEntry {
+                        url: natives_download.url.clone(),
+                        remote_sha1: Some(natives_download.sha1.clone()),
+                        path: libraries_dir.join(&natives_download.path),
+                    });
+                }
+            }
+        }
+
+        entries
+    }
+
+    pub fn get_paths(&self, libraries_dir: &Path) -> Vec<PathBuf> {
+        let mut paths = vec![];
+
+        if self.apply_rules() {
+            if let Some(downloads) = &self.downloads {
+                if let Some(artifact) = &downloads.artifact {
+                    paths.push(libraries_dir.join(&artifact.path));
+                }
             } else {
-                format!("-{}", suffix)
-            };
-            format!(
-                "{}/{}/{}/{}-{}{}.jar",
-                pkg_path, name, version, name, version, suffix
-            )
+                paths.push(libraries_dir.join(&self.get_path_from_name()));
+            }
         }
-    }
 
-    pub fn get_url(&self) -> Option<String> {
-        match &self.downloads {
-            Some(downloads) => Some(downloads.artifact.url.clone()),
-            None => Some(self.url.clone()? + &self.get_path()),
+        if let Some(classifiers) = self.downloads.as_ref().and_then(|d| d.classifiers.as_ref()) {
+            if let Some(natives_name) = self.get_natives_name() {
+                if let Some(natives_download) = classifiers.get(&natives_name) {
+                    paths.push(libraries_dir.join(&natives_download.path));
+                }
+            }
         }
-    }
 
-    pub fn get_sha1(&self) -> Option<String> {
-        match &self.downloads {
-            Some(downloads) => Some(downloads.artifact.sha1.clone()),
-            None => self.sha1.clone(),
-        }
+        paths
     }
 
     pub fn get_sha1_url(&self) -> Option<String> {
-        Some(self.url.clone()? + &self.get_path() + ".sha1")
+        Some(self.url.clone()? + &self.get_path_from_name() + ".sha1")
     }
 }
 
 #[derive(Deserialize)]
+pub struct ClientDownload {
+    pub sha1: String,
+    pub url: String,
+}
+
+#[derive(Deserialize)]
+pub struct Downloads {
+    pub client: Option<ClientDownload>,
+}
+
+#[derive(Deserialize)]
 struct VersionMetadata {
-    pub arguments: Option<Arguments>,
+    arguments: Option<Arguments>,
 
     #[serde(rename = "assetIndex")]
     pub asset_index: Option<AssetIndex>,
 
+    pub downloads: Option<Downloads>,
     pub id: String,
 
-    // #[serde(rename = "javaVersion")]
-    // pub java_version: Option<JavaVersion>,
+    #[serde(rename = "javaVersion")]
+    pub java_version: Option<JavaVersion>,
     pub libraries: Vec<Library>,
 
     #[serde(rename = "mainClass")]
@@ -242,85 +325,121 @@ struct VersionMetadata {
     pub inherits_from: Option<String>,
 
     #[serde(rename = "minecraftArguments")]
-    pub minecraft_arguments: Option<String>,
+    minecraft_arguments: Option<String>,
+}
+lazy_static::lazy_static! {
+    static ref LEGACY_JVM_ARGS: Vec<VariableArgument<Rule>> = vec![
+        VariableArgument::Complex(ComplexArgument {
+            value: ArgumentValue::String("-XstartOnFirstThread".to_string()),
+            rules: vec![Rule{
+                action: "allow".to_string(),
+                os: Some(Os {
+                    name: Some("osx".to_string()),
+                    arch: None,
+                }),
+            }],
+        }),
+        VariableArgument::Complex(ComplexArgument {
+            value: ArgumentValue::String("-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump".to_string()),
+            rules: vec![Rule{
+                action: "allow".to_string(),
+                os: Some(Os {
+                    name: Some("windows".to_string()),
+                    arch: None,
+                }),
+            }],
+        }),
+        VariableArgument::Complex(ComplexArgument {
+            value: ArgumentValue::Array(vec!["-Dos.name=Windows 10".to_string(), "-Dos.version=10.0".to_string()]),
+            rules: vec![Rule{
+                action: "allow".to_string(),
+                os: Some(Os {
+                    name: Some("windows".to_string()),
+                    arch: None,
+                }),
+            }],
+        }),
+        VariableArgument::Simple("-Djava.library.path=${natives_directory}".to_string()),
+        VariableArgument::Simple("-Dminecraft.launcher.brand=${launcher_name}".to_string()),
+        VariableArgument::Simple("-Dminecraft.launcher.version=${launcher_version}".to_string()),
+        VariableArgument::Simple("-cp".to_string()),
+        VariableArgument::Simple("${classpath}".to_string()),
+    ];
 }
 
-async fn read_versions_metadata(
-    versions_dir_path: &Path,
-) -> Result<Vec<VersionMetadata>, Box<dyn Error + Send + Sync>> {
-    let mut versions_metadata = Vec::new();
-    let mut entries = fs::read_dir(versions_dir_path).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        if path.is_dir() {
-            let version_dir = path;
-            let version_name = version_dir.file_name().unwrap().to_str().unwrap();
-            let json_file_path = version_dir.join(format!("{}.json", version_name));
-            if json_file_path.is_file() {
-                let mut file = fs::File::open(&json_file_path).await?;
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents).await?;
-                let metadata: VersionMetadata = serde_json::from_slice(&contents)?;
-                versions_metadata.push(metadata);
+impl VersionMetadata {
+    pub fn get_arguments(&self) -> Result<Arguments, Box<dyn Error + Send + Sync>> {
+        match &self.arguments {
+            Some(arguments) => Ok(arguments.clone()),
+            None => {
+                let minecraft_arguments = self.minecraft_arguments.clone().unwrap();
+                Ok(Arguments {
+                    game: minecraft_arguments
+                        .split_whitespace()
+                        .map(|x| VariableArgument::Simple(x.to_string()))
+                        .collect(),
+                    jvm: LEGACY_JVM_ARGS.clone(),
+                })
             }
         }
     }
+}
 
-    Ok(versions_metadata)
+fn get_version_metadata_path(versions_dir: &Path, version_id: &str) -> PathBuf {
+    versions_dir
+        .join(version_id)
+        .join(format!("{}.json", version_id))
+}
+
+async fn read_version_metadata(
+    versions_dir: &Path,
+    version_id: &str,
+) -> Result<VersionMetadata, Box<dyn Error + Send + Sync>> {
+    let version_path = get_version_metadata_path(versions_dir, version_id);
+    let mut file = fs::File::open(version_path).await?;
+    let mut content = String::new();
+    file.read_to_string(&mut content).await?;
+    let metadata = serde_json::from_str(&content)?;
+    Ok(metadata)
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum VersionMetadataError {
     #[error("Bad arguments")]
     BadArgumentsError,
-    #[error("Too many base metadata found")]
-    TooManyBaseMetadataError,
-    #[error("Base metadata not found")]
-    BaseMetadataNotFoundError,
 }
 
 pub struct MergedVersionMetadata {
     pub arguments: Arguments,
     pub asset_index: AssetIndex,
     pub id: String,
-    // pub java_version: JavaVersion,
+    pub java_version: JavaVersion,
     pub libraries: Vec<Library>,
     pub main_class: String,
+    pub downloads: Option<Downloads>,
 }
 
 impl MergedVersionMetadata {
     fn from_version_metadata(
         version_metadata: VersionMetadata,
     ) -> Result<MergedVersionMetadata, Box<dyn Error + Send + Sync>> {
-        let version_arguments;
-        if let Some(arguments) = version_metadata.arguments {
-            version_arguments = arguments;
-        } else {
-            let minecraft_arguments = version_metadata
-                .minecraft_arguments
-                .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?;
-            version_arguments = Arguments {
-                game: minecraft_arguments
-                    .split_whitespace()
-                    .map(|x| VariableArgument::Simple(x.to_string()))
-                    .collect(),
-                jvm: Vec::new(),
-            };
-        }
-
         Ok(MergedVersionMetadata {
-            arguments: version_arguments,
+            arguments: version_metadata.get_arguments()?,
             asset_index: version_metadata
                 .asset_index
                 .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
             id: version_metadata.id,
-            // java_version: version_metadata
-            //     .java_version
-            //     .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
+            java_version: version_metadata
+                .java_version
+                .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
             libraries: version_metadata.libraries,
             main_class: version_metadata.main_class,
+            downloads: version_metadata.downloads,
         })
+    }
+
+    pub fn get_client_jar_path(&self, versions_dir: &Path) -> PathBuf {
+        versions_dir.join(&self.id).join(format!("{}.jar", self.id))
     }
 }
 
@@ -337,72 +456,47 @@ fn merge_two_metadata(
     parent_metadata.id = child_metadata.id;
     parent_metadata.main_class = child_metadata.main_class;
 
-    Ok(())
-}
-
-fn merge_recursive(
-    current_metadata: &mut MergedVersionMetadata,
-    metadata_children: &mut HashMap<String, Vec<VersionMetadata>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let id = current_metadata.id.clone();
-
-    if let Some(current_metadata_children) = metadata_children.remove(&id) {
-        for child_metadata in current_metadata_children.into_iter() {
-            merge_two_metadata(current_metadata, child_metadata)?;
-            merge_recursive(current_metadata, metadata_children)?;
-        }
+    if parent_metadata.downloads.is_none() && child_metadata.downloads.is_some() {
+        parent_metadata.downloads = child_metadata.downloads;
     }
 
     Ok(())
 }
 
-fn merge_version_metadata(
-    versions_metadata: Vec<VersionMetadata>,
+pub async fn read_local_merged_version_metadata(
+    version_id: &str,
+    versions_dir: &Path,
 ) -> Result<MergedVersionMetadata, Box<dyn Error + Send + Sync>> {
-    let mut children_ids = HashSet::new();
-    for metadata in versions_metadata.iter() {
-        if metadata.inherits_from.is_some() {
-            children_ids.insert(metadata.id.clone());
-        }
+    let mut metadata = read_version_metadata(versions_dir, version_id).await?;
+    let mut inherits_from = metadata.inherits_from.clone();
+    let mut merged_metadata = MergedVersionMetadata::from_version_metadata(metadata)?;
+    while let Some(parent_id) = &inherits_from {
+        metadata = read_version_metadata(versions_dir, parent_id).await?;
+        inherits_from = metadata.inherits_from.clone();
+        merge_two_metadata(&mut merged_metadata, metadata)?;
     }
-
-    let mut base_metadata_id = None;
-    for metadata in versions_metadata.iter() {
-        if !children_ids.contains(&metadata.id) {
-            if base_metadata_id.is_some() {
-                return Err(Box::new(VersionMetadataError::TooManyBaseMetadataError));
-            }
-            base_metadata_id = Some(metadata.id.clone());
-        }
-    }
-    let base_metadata_id =
-        base_metadata_id.ok_or(Box::new(VersionMetadataError::BaseMetadataNotFoundError))?;
-
-    let mut base_metadata = None;
-    let mut metadata_children = HashMap::new();
-    for current_metadata in versions_metadata.into_iter() {
-        if let Some(parent_id) = &current_metadata.inherits_from {
-            let metadata = metadata_children
-                .entry(parent_id.clone())
-                .or_insert_with(Vec::new);
-            metadata.push(current_metadata);
-        } else if current_metadata.id == base_metadata_id {
-            base_metadata = Some(current_metadata);
-        }
-    }
-
-    let base_metadata =
-        base_metadata.ok_or(Box::new(VersionMetadataError::BaseMetadataNotFoundError))?;
-    let mut merged_metadata = MergedVersionMetadata::from_version_metadata(base_metadata)?;
-    merge_recursive(&mut merged_metadata, &mut metadata_children)?;
 
     Ok(merged_metadata)
 }
 
-pub async fn get_merged_metadata(
-    versions_dir_path: &Path,
+pub async fn get_merged_version_metadata(
+    version_info: &VersionInfo,
+    versions_dir: &Path,
 ) -> Result<MergedVersionMetadata, Box<dyn Error + Send + Sync>> {
-    let versions_metadata = read_versions_metadata(versions_dir_path).await?;
-    let merged_metadata = merge_version_metadata(versions_metadata)?;
-    Ok(merged_metadata)
+    let metadata_info = version_info.get_metadata_info();
+
+    let check_entries: Vec<CheckDownloadEntry> = metadata_info
+        .iter()
+        .map(|metadata| CheckDownloadEntry {
+            url: metadata.url.clone(),
+            remote_sha1: Some(metadata.sha1.clone()),
+            path: get_version_metadata_path(versions_dir, &metadata.id),
+        })
+        .collect();
+
+    let download_entries =
+        files::get_download_entries(check_entries, progress::no_progress_bar()).await?;
+    files::download_files(download_entries, progress::no_progress_bar()).await?;
+
+    read_local_merged_version_metadata(&version_info.id, versions_dir).await
 }

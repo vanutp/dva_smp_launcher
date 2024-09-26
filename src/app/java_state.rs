@@ -1,4 +1,4 @@
-use egui::Widget;
+use egui::Widget as _;
 use std::path::Path;
 use std::sync::{mpsc, Arc};
 use tokio::runtime::Runtime;
@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
 use crate::launcher::java;
-use crate::modpack::index::ModpackIndex;
+use crate::modpack::complete_version_metadata::CompleteVersionMetadata;
 use crate::progress::{ProgressBar, Unit};
 use crate::utils;
 
@@ -101,20 +101,25 @@ impl JavaState {
         }
     }
 
-    fn check_java(&mut self, index: &ModpackIndex, config: &mut runtime_config::Config) {
-        if let Some(java_path) = config.java_paths.get(&index.modpack_name) {
-            if !java::check_java(&index.java_version, java_path.as_ref()) {
-                config.java_paths.remove(&index.modpack_name);
+    fn check_java(
+        &mut self,
+        metadata: &CompleteVersionMetadata,
+        config: &mut runtime_config::Config,
+    ) {
+        if let Some(java_path) = config.java_paths.get(&metadata.base.id) {
+            if !java::check_java(&metadata.get_java_version(), java_path.as_ref()) {
+                config.java_paths.remove(&metadata.base.id);
                 runtime_config::save_config(config);
             }
         }
 
-        if config.java_paths.get(&index.modpack_name).is_none() {
-            if let Some(java_installation) =
-                java::get_java(&index.java_version, &runtime_config::get_java_dir(config))
-            {
+        if config.java_paths.get(&metadata.base.id).is_none() {
+            if let Some(java_installation) = java::get_java(
+                &metadata.get_java_version(),
+                &runtime_config::get_java_dir(config),
+            ) {
                 config.java_paths.insert(
-                    index.modpack_name.clone(),
+                    metadata.base.id.clone(),
                     java_installation.path.to_str().unwrap().to_string(),
                 );
                 runtime_config::save_config(config);
@@ -125,16 +130,16 @@ impl JavaState {
     pub fn update(
         &mut self,
         runtime: &Runtime,
-        index: &ModpackIndex,
+        metadata: &CompleteVersionMetadata,
         config: &mut runtime_config::Config,
         need_java_check: bool,
     ) {
         if need_java_check {
-            self.check_java(index, config);
-            if config.java_paths.get(&index.modpack_name).is_some() {
+            self.check_java(metadata, config);
+            if config.java_paths.get(&metadata.base.id).is_some() {
                 self.status = JavaDownloadStatus::Downloaded;
             }
-            if config.java_paths.get(&index.modpack_name).is_none()
+            if config.java_paths.get(&metadata.base.id).is_none()
                 && self.status == JavaDownloadStatus::Downloaded
             {
                 self.status = JavaDownloadStatus::NotDownloaded;
@@ -150,7 +155,7 @@ impl JavaState {
 
             let java_download_task = download_java(
                 runtime,
-                &index.java_version,
+                &metadata.get_java_version(),
                 &java_dir,
                 self.java_download_progress_bar.clone(),
                 self.cancellation_token.clone(),
@@ -160,30 +165,33 @@ impl JavaState {
 
         if let Some(task) = self.java_download_task.as_ref() {
             if let Some(result) = task.take_result() {
-                if result.status == JavaDownloadStatus::Downloaded {
-                    let path = result.java_installation.as_ref().unwrap().path.clone();
-                    if java::check_java(&index.java_version, &path) {
-                        config.java_paths.insert(
-                            index.modpack_name.clone(),
-                            path.to_str().unwrap().to_string(),
-                        );
-                        runtime_config::save_config(config);
-                    }
-                }
                 self.status = result.status;
                 self.java_download_task = None;
+                if self.status == JavaDownloadStatus::Downloaded {
+                    let path = result.java_installation.as_ref().unwrap().path.clone();
+                    if java::check_java(&metadata.get_java_version(), &path) {
+                        config
+                            .java_paths
+                            .insert(metadata.base.id.clone(), path.to_str().unwrap().to_string());
+                        runtime_config::save_config(config);
+                    } else {
+                        self.status = JavaDownloadStatus::DownloadError(
+                            "Downloaded Java is not valid".to_string(),
+                        );
+                    }
+                }
             }
         }
     }
 
     fn get_download_button_text(
         &self,
-        selected_index: &ModpackIndex,
+        selected_metadata: &CompleteVersionMetadata,
         config: &runtime_config::Config,
     ) -> egui::Button {
         egui::Button::new(
             LangMessage::DownloadJava {
-                version: selected_index.java_version.clone(),
+                version: selected_metadata.get_java_version().clone(),
             }
             .to_string(&config.lang),
         )
@@ -209,13 +217,13 @@ impl JavaState {
         &mut self,
         ui: &mut egui::Ui,
         config: &mut runtime_config::Config,
-        selected_index: &ModpackIndex,
+        selected_metadata: &CompleteVersionMetadata,
     ) {
         match self.status {
             JavaDownloadStatus::NotDownloaded => {
                 ui.label(
                     LangMessage::NeedJava {
-                        version: selected_index.java_version.clone(),
+                        version: selected_metadata.get_java_version().clone(),
                     }
                     .to_string(&config.lang),
                 );
@@ -230,7 +238,7 @@ impl JavaState {
             JavaDownloadStatus::Downloaded => {
                 ui.label(
                     LangMessage::JavaInstalled {
-                        version: selected_index.java_version.clone(),
+                        version: selected_metadata.get_java_version().clone(),
                     }
                     .to_string(&config.lang),
                 );
@@ -244,7 +252,7 @@ impl JavaState {
 
         if self.is_download_needed() {
             if self
-                .get_download_button_text(selected_index, config)
+                .get_download_button_text(selected_metadata, config)
                 .ui(ui)
                 .clicked()
             {
@@ -257,18 +265,18 @@ impl JavaState {
         {
             self.settings_opened = true;
 
-            self.picked_java_path = config.java_paths.get(&selected_index.modpack_name).cloned();
+            self.picked_java_path = config.java_paths.get(&selected_metadata.base.id).cloned();
             self.selected_xmx = Some(config.xmx.clone());
         }
 
-        self.render_settings_window(ui, config, selected_index);
+        self.render_settings_window(ui, config, selected_metadata);
     }
 
     fn render_settings_window(
         &mut self,
         ui: &mut egui::Ui,
         config: &mut runtime_config::Config,
-        selected_index: &ModpackIndex,
+        selected_metadata: &CompleteVersionMetadata,
     ) {
         let mut update_status = false;
         egui::Window::new(LangMessage::JavaSettings.to_string(&config.lang))
@@ -286,10 +294,10 @@ impl JavaState {
                     .clicked()
                 {
                     if let Some(path) = rfd::FileDialog::new().pick_file() {
-                        if java::check_java(&selected_index.java_version, &path) {
+                        if java::check_java(&selected_metadata.get_java_version(), &path) {
                             self.picked_java_path = Some(path.display().to_string());
                             config.java_paths.insert(
-                                selected_index.modpack_name.clone(),
+                                selected_metadata.base.id.clone(),
                                 path.display().to_string(),
                             );
                             runtime_config::save_config(config);

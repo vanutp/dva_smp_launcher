@@ -99,12 +99,20 @@ where
             if let Some(e) = first_error.take() {
                 Err(e)
             } else {
-                Ok(results.into_iter().map(|x| x.expect("Task failed but no error was set")).collect())
+                let results: Result<Vec<_>, _> = results.into_iter().map(|x| {
+                    x.ok_or_else(|| "Task failed but no error was set".into())
+                }).collect();
+                results
             }
         }
         _ = cancellation_token.cancelled() => {
             progress_bar.finish();
-            Err("Cancelled".into())
+            let mut first_error = first_error.lock().unwrap();
+            if let Some(e) = first_error.take() {
+                Err(e)
+            } else {
+                Err("Got cancelled but no error was set".into())
+            }
         }
     }
 }
