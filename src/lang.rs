@@ -46,6 +46,7 @@ pub enum LangMessage {
     SelectJavaPath,
     Launch,
     LaunchError(String),
+    ProcessErrorCode(String),
     Running,
     Language,
     LanguageName,
@@ -243,6 +244,10 @@ impl LangMessage {
             LangMessage::LaunchError(e) => match lang {
                 Lang::English => format!("Error launching: {}", e),
                 Lang::Russian => format!("Ошибка запуска: {}", e),
+            },
+            LangMessage::ProcessErrorCode(e) => match lang {
+                Lang::English => format!("Process exited with code: {}", e),
+                Lang::Russian => format!("Процесс завершился с кодом: {}", e),
             },
             LangMessage::Running => match lang {
                 Lang::English => "Running...".to_string(),

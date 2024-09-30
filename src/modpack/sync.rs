@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use reqwest::Client;
+use std::fs;
+use zip::ZipArchive;
 
 use crate::files::CheckDownloadEntry;
 use crate::lang::LangMessage;
@@ -92,7 +94,7 @@ async fn get_assets_downloads(
                 &object.hash[..2],
                 object.hash
             ),
-            remote_sha1: Some(object.hash.clone()),
+            remote_sha1: None,
             path: assets_dir
                 .join("objects")
                 .join(&object.hash[..2])
@@ -111,8 +113,11 @@ async fn get_libraries_downloads(
     let mut check_download_entries: Vec<CheckDownloadEntry> = Vec::new();
 
     for library in libraries.iter() {
-        let entries = library.get_check_download_entries(libraries_dir);
-        for entry in entries {
+        if !library.rules_match() {
+            continue;
+        }
+
+        for entry in library.get_check_download_enties(libraries_dir) {
             if entry.remote_sha1.is_some() || !entry.path.exists() {
                 check_download_entries.push(entry);
             } else {
@@ -165,6 +170,70 @@ async fn get_libraries_downloads(
         .collect::<Result<_, _>>()?;
 
     Ok(check_download_entries)
+}
+
+fn extract_natives(
+    libraries: &Vec<version_metadata::Library>,
+    libraries_dir: &Path,
+    natives_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    for library in libraries.iter() {
+        if !library.rules_match() {
+            continue;
+        }
+
+        for natives_path in library.get_natives_paths(libraries_dir) {
+            let exclude = library.get_extract()
+                .map(|x|
+                    x.exclude
+                        .clone()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect::<HashSet<_>>()
+                );
+            extract_files(&natives_path, &natives_dir, exclude)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_files(
+    src: &Path,
+    dest: &Path,
+    exclude: Option<HashSet<String>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let exclude = exclude.unwrap_or_default();
+
+    let file = fs::File::open(src)?;
+    let mut zip = ZipArchive::new(file)?;
+
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        if let Some(file_path) = entry.enclosed_name() {
+            if let Some(directory) = file_path.components().next() {
+                let directory = directory.as_os_str().to_str().unwrap_or_default();
+                if exclude.contains(directory)
+                    || exclude.contains(format!("{}/", directory).as_str())
+                {
+                    continue;
+                }
+            }
+
+            let output_path = dest.join(file_path);
+            if entry.is_file() {
+                if let Some(parent) = output_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let mut outfile = fs::File::create(&output_path)?;
+                std::io::copy(&mut entry, &mut outfile)?;
+            } else if entry.is_dir() {
+                fs::create_dir_all(&output_path)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn get_client_download_entry(
@@ -222,7 +291,15 @@ pub async fn sync_modpack(
         versions_dir,
     } = path_data;
 
+    let libraries_dir = modpack_dir.join("libraries");
+    let natives_dir = modpack_dir.join("natives");
+
     let mut check_download_entries = vec![];
+
+    check_download_entries.push(get_client_download_entry(version_metadata, &versions_dir)?);
+
+    check_download_entries
+        .extend(get_libraries_downloads(&version_metadata.base.libraries, &libraries_dir).await?);
 
     if let Some(extra) = &version_metadata.extra {
         check_download_entries
@@ -248,16 +325,6 @@ pub async fn sync_modpack(
         .await?,
     );
 
-    check_download_entries.extend(
-        get_libraries_downloads(
-            &version_metadata.base.libraries,
-            &modpack_dir.join("libraries"),
-        )
-        .await?,
-    );
-
-    check_download_entries.push(get_client_download_entry(version_metadata, &versions_dir)?);
-
     progress_bar.set_message(LangMessage::CheckingFiles);
     let download_entries =
         files::get_download_entries(check_download_entries, progress_bar.clone()).await?;
@@ -268,6 +335,12 @@ pub async fn sync_modpack(
     if needed_index_download {
         asset_metadata::save_asset_metadata(&asset_index.id, &asset_metadata, &assets_dir).await?;
     }
+
+    extract_natives(
+        &version_metadata.base.libraries,
+        &libraries_dir,
+        &natives_dir,
+    )?;
 
     Ok(())
 }

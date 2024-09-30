@@ -16,6 +16,12 @@ mod utils;
 use config::runtime_config;
 
 fn main() {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .format_target(false)
+        .format_timestamp(None)
+        .init();
+
     utils::set_sigint_handler();
 
     let config = runtime_config::load_config();

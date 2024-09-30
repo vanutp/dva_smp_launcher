@@ -9,6 +9,7 @@ enum LauncherStatus {
     NotLaunched,
     Running { child: Child },
     Error(String),
+    ProcessErrorCode(String),
 }
 
 pub struct LaunchState {
@@ -53,9 +54,19 @@ impl LaunchState {
     pub fn update(&mut self) {
         match self.status {
             LauncherStatus::Running { ref mut child } => {
-                if child.try_wait().unwrap().is_some() {
-                    self.status = LauncherStatus::NotLaunched;
-                }
+                match child.try_wait() {
+                    Ok(Some(exit_status)) => {
+                        self.status = if exit_status.success() {
+                            LauncherStatus::NotLaunched
+                        } else {
+                            LauncherStatus::ProcessErrorCode(exit_status.code().unwrap_or(-1).to_string())
+                        };
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        self.status = LauncherStatus::Error(e.to_string());
+                    }
+                };
             }
             _ => {}
         }
@@ -111,6 +122,9 @@ impl LaunchState {
         match &self.status {
             LauncherStatus::Error(e) => {
                 ui.label(LangMessage::LaunchError(e.clone()).to_string(&config.lang));
+            }
+            LauncherStatus::ProcessErrorCode(e) => {
+                ui.label(LangMessage::ProcessErrorCode(e.clone()).to_string(&config.lang));
             }
             _ => {}
         }

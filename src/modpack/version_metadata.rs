@@ -15,9 +15,10 @@ use crate::{
 use super::version_manifest::VersionInfo;
 
 #[derive(Deserialize, Clone)]
-pub struct GameRule {
-    pub action: String,
-    pub features: HashMap<String, bool>,
+pub struct Rule {
+    action: String,
+    os: Option<Os>,
+    pub features: Option<HashMap<String, bool>>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -54,106 +55,96 @@ struct Os {
     arch: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
-pub struct Rule {
-    action: String,
-    os: Option<Os>,
-}
-
 impl Rule {
-    pub fn is_allowed(&self) -> bool {
-        let allow = self.action == "allow";
+    pub fn is_allowed(&self) -> Option<bool> {
+        let is_allowed = self.action == "allow";
+        let matching_features = vec!["has_custom_resolution"];
+
+        let mut matches = true;
+
         if let Some(os) = &self.os {
             if let Some(name) = &os.name {
-                let os_matches = name == &get_metadata_os_name();
-                return os_matches == allow;
+                if name != &get_metadata_os_name() {
+                    matches = false;
+                }
             }
             if let Some(arch) = &os.arch {
-                let arch_matches = arch == std::env::consts::ARCH;
-                return arch_matches == allow;
+                if arch != std::env::consts::ARCH {
+                    matches = false;
+                }
             }
-            true
+        }
+
+        if let Some(features) = &self.features {
+            for (feature, value) in features {
+                let contains = matching_features.contains(&feature.as_str());
+                if contains != *value {
+                    matches = false;
+                    break;
+                }
+            }
+        }
+
+        if matches {
+            Some(is_allowed)
         } else {
-            allow
+            None
         }
     }
 }
 
-#[derive(Deserialize, Clone)]
-pub struct ComplexArgument<R> {
-    pub value: ArgumentValue,
-    pub rules: Vec<R>,
+fn rules_apply(rules: &Vec<Rule>) -> bool {
+    let mut some_allowed = false;
+    for rule in rules {
+        if let Some(is_allowed) = rule.is_allowed() {
+            if !is_allowed {
+                return false;
+            }
+            some_allowed = true;
+        }
+    }
+    some_allowed
 }
 
-pub trait Argument {
-    fn apply(&self) -> bool;
-    fn get_values(&self) -> Vec<&str>;
+#[derive(Deserialize, Clone)]
+pub struct ComplexArgument {
+    pub value: ArgumentValue,
+    pub rules: Vec<Rule>,
 }
 
 #[derive(Deserialize, Clone)]
 #[serde(untagged)]
-pub enum VariableArgument<R> {
+pub enum VariableArgument {
     Simple(String),
-    Complex(ComplexArgument<R>),
+    Complex(ComplexArgument),
 }
 
-impl<T> VariableArgument<T> {
+impl VariableArgument {
     pub fn get_values(&self) -> Vec<&str> {
         match self {
             VariableArgument::Simple(s) => vec![s.as_str()],
-            VariableArgument::Complex(complex) => complex.value.get_values(),
-        }
-    }
-}
-
-impl Argument for VariableArgument<GameRule> {
-    fn apply(&self) -> bool {
-        match self {
-            VariableArgument::Simple(_) => true,
             VariableArgument::Complex(complex) => {
-                for rule in &complex.rules {
-                    for (key, value) in &rule.features {
-                        let custom_resolution = key == "has_custom_resolution" && *value;
-                        let allow = rule.action == "allow";
-                        if custom_resolution == allow {
-                            return true;
-                        }
-                    }
+                if rules_apply(&complex.rules) {
+                    complex.value.get_values()
+                } else {
+                    vec![]
                 }
-                false
             }
         }
     }
 
-    fn get_values(&self) -> Vec<&str> {
-        self.get_values()
-    }
-}
-
-impl Argument for VariableArgument<Rule> {
-    fn apply(&self) -> bool {
+    pub fn apply(&self) -> bool {
         match self {
             VariableArgument::Simple(_) => true,
-            VariableArgument::Complex(complex) => {
-                for rule in &complex.rules {
-                    if !rule.is_allowed() {
-                        return false;
-                    }
-                }
-                true
-            }
+            VariableArgument::Complex(complex) => rules_apply(&complex.rules),
         }
-    }
-
-    fn get_values(&self) -> Vec<&str> {
-        self.get_values()
     }
 }
 
 #[derive(Deserialize, Clone)]
 pub struct Arguments {
-    pub game: Vec<VariableArgument<GameRule>>,
-    pub jvm: Vec<VariableArgument<Rule>>,
+    pub game: Vec<VariableArgument>,
+    pub jvm: Vec<VariableArgument>,
 }
 
 #[derive(Deserialize)]
@@ -183,6 +174,11 @@ pub struct LibraryDownloads {
 }
 
 #[derive(Deserialize)]
+pub struct LibraryExtract {
+    pub exclude: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
 pub struct Library {
     name: String,
     downloads: Option<LibraryDownloads>,
@@ -190,18 +186,16 @@ pub struct Library {
     url: Option<String>,
     sha1: Option<String>,
     natives: Option<HashMap<String, String>>,
+    extract: Option<LibraryExtract>,
 }
 
 impl Library {
-    fn apply_rules(&self) -> bool {
+    pub fn rules_match(&self) -> bool {
         if let Some(rules) = &self.rules {
-            for rule in rules {
-                if !rule.is_allowed() {
-                    return false;
-                }
-            }
+            rules_apply(rules)
+        } else {
+            true
         }
-        true
     }
 
     pub fn get_path_from_name(&self) -> String {
@@ -223,40 +217,36 @@ impl Library {
         )
     }
 
-    fn get_natives_name(&self) -> Option<String> {
-        let os_name = get_metadata_os_name();
-        self.natives.as_ref()?.get(&os_name).cloned()
-    }
-
-    pub fn get_check_download_entries(&self, libraries_dir: &Path) -> Vec<CheckDownloadEntry> {
+    pub fn get_check_download_enties(&self, libraries_dir: &Path) -> Vec<CheckDownloadEntry> {
         let mut entries = vec![];
 
-        if self.apply_rules() {
-            if let Some(downloads) = &self.downloads {
-                if let Some(artifact) = &downloads.artifact {
-                    entries.push(CheckDownloadEntry {
-                        url: artifact.url.clone(),
-                        remote_sha1: Some(artifact.sha1.clone()),
-                        path: libraries_dir.join(&artifact.path),
-                    });
-                }
-            } else if let Some(url) = &self.url {
+        if let Some(downloads) = &self.downloads {
+            if let Some(artifact) = &downloads.artifact {
                 entries.push(CheckDownloadEntry {
-                    url: url.clone(),
-                    remote_sha1: self.sha1.clone(),
-                    path: libraries_dir.join(&self.get_path_from_name()),
+                    url: artifact.url.clone(),
+                    remote_sha1: Some(artifact.sha1.clone()),
+                    path: libraries_dir.join(&artifact.path),
                 });
             }
         }
+        if let Some(url) = &self.url {
+            entries.push(CheckDownloadEntry {
+                url: url.clone(),
+                remote_sha1: self.sha1.clone(),
+                path: libraries_dir.join(&self.get_path_from_name()),
+            });
+        }
 
-        if let Some(classifiers) = self.downloads.as_ref().and_then(|d| d.classifiers.as_ref()) {
-            if let Some(natives_name) = self.get_natives_name() {
-                if let Some(natives_download) = classifiers.get(&natives_name) {
-                    entries.push(CheckDownloadEntry {
-                        url: natives_download.url.clone(),
-                        remote_sha1: Some(natives_download.sha1.clone()),
-                        path: libraries_dir.join(&natives_download.path),
-                    });
+        if let Some(natives_name) = self.get_natives_name() {
+            if let Some(downloads) = &self.downloads {
+                if let Some(classifiers) = &downloads.classifiers {
+                    if let Some(download) = classifiers.get(&natives_name) {
+                        entries.push(CheckDownloadEntry {
+                            url: download.url.clone(),
+                            remote_sha1: Some(download.sha1.clone()),
+                            path: libraries_dir.join(&download.path),
+                        });
+                    }
                 }
             }
         }
@@ -264,32 +254,46 @@ impl Library {
         entries
     }
 
-    pub fn get_paths(&self, libraries_dir: &Path) -> Vec<PathBuf> {
-        let mut paths = vec![];
-
-        if self.apply_rules() {
-            if let Some(downloads) = &self.downloads {
-                if let Some(artifact) = &downloads.artifact {
-                    paths.push(libraries_dir.join(&artifact.path));
-                }
-            } else {
-                paths.push(libraries_dir.join(&self.get_path_from_name()));
+    pub fn get_path(&self, libraries_dir: &Path) -> Option<PathBuf> {
+        if let Some(downloads) = &self.downloads {
+            if let Some(artifact) = &downloads.artifact {
+                return Some(libraries_dir.join(&artifact.path));
             }
         }
-
-        if let Some(classifiers) = self.downloads.as_ref().and_then(|d| d.classifiers.as_ref()) {
-            if let Some(natives_name) = self.get_natives_name() {
-                if let Some(natives_download) = classifiers.get(&natives_name) {
-                    paths.push(libraries_dir.join(&natives_download.path));
-                }
-            }
+        if self.url.is_some() {
+            return Some(libraries_dir.join(&self.get_path_from_name()));
         }
 
-        paths
+        None
     }
 
     pub fn get_sha1_url(&self) -> Option<String> {
         Some(self.url.clone()? + &self.get_path_from_name() + ".sha1")
+    }
+
+    fn get_natives_name(&self) -> Option<String> {
+        let os_name = get_metadata_os_name();
+        self.natives.as_ref()?.get(&os_name).cloned()
+    }
+
+    pub fn get_natives_paths(&self, libraries_dir: &Path) -> Vec<PathBuf> {
+        if let Some(natives_name) = self.get_natives_name() {
+            let mut paths = vec![];
+            if let Some(downloads) = &self.downloads {
+                if let Some(classifiers) = &downloads.classifiers {
+                    if let Some(download) = classifiers.get(&natives_name) {
+                        paths.push(libraries_dir.join(&download.path));
+                    }
+                }
+            }
+            paths
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn get_extract(&self) -> Option<&LibraryExtract> {
+        self.extract.as_ref()
     }
 }
 
@@ -328,17 +332,18 @@ struct VersionMetadata {
     minecraft_arguments: Option<String>,
 }
 lazy_static::lazy_static! {
-    static ref LEGACY_JVM_ARGS: Vec<VariableArgument<Rule>> = vec![
-        VariableArgument::Complex(ComplexArgument {
-            value: ArgumentValue::String("-XstartOnFirstThread".to_string()),
-            rules: vec![Rule{
-                action: "allow".to_string(),
-                os: Some(Os {
-                    name: Some("osx".to_string()),
-                    arch: None,
-                }),
-            }],
-        }),
+    static ref LEGACY_JVM_ARGS: Vec<VariableArgument> = vec![
+        // VariableArgument::Complex(ComplexArgument {
+        //     value: ArgumentValue::String("-XstartOnFirstThread".to_string()),
+        //     rules: vec![Rule{
+        //         action: "allow".to_string(),
+        //         os: Some(Os {
+        //             name: Some("osx".to_string()),
+        //             arch: None,
+        //         }),
+        //         features: None,
+        //     }],
+        // }),
         VariableArgument::Complex(ComplexArgument {
             value: ArgumentValue::String("-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump".to_string()),
             rules: vec![Rule{
@@ -347,6 +352,7 @@ lazy_static::lazy_static! {
                     name: Some("windows".to_string()),
                     arch: None,
                 }),
+                features: None,
             }],
         }),
         VariableArgument::Complex(ComplexArgument {
@@ -357,6 +363,7 @@ lazy_static::lazy_static! {
                     name: Some("windows".to_string()),
                     arch: None,
                 }),
+                features: None,
             }],
         }),
         VariableArgument::Simple("-Djava.library.path=${natives_directory}".to_string()),

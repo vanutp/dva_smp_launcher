@@ -1,7 +1,7 @@
+use log::info;
 use maplit::hashmap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use tokio::fs;
 use tokio::process::{Child, Command as TokioCommand};
 
 use crate::auth::elyby::ELY_BY_BASE;
@@ -40,7 +40,7 @@ fn replace_launch_config_variables(
 }
 
 fn process_args(
-    args: &[&dyn version_metadata::Argument],
+    args: &Vec<version_metadata::VariableArgument>,
     variables: &HashMap<String, String>,
 ) -> Vec<String> {
     let mut options = vec![];
@@ -58,8 +58,12 @@ fn process_args(
 
 #[derive(thiserror::Error, Debug)]
 pub enum LaunchError {
+    #[error("Missing library {0}")]
+    MissingLibrary(PathBuf),
     #[error("Invalid path {0}")]
     InvalidPath(PathBuf),
+    #[error("Java path for version {0} not found")]
+    JavaPathNotFound(String),
 }
 
 pub async fn launch(
@@ -81,21 +85,30 @@ pub async fn launch(
                 )))?,
         )?);
     }
-    fs::create_dir_all(minecraft_dir.join("natives")).await?;
+    let natives_dir = minecraft_dir.join("natives");
 
+    let mut used_library_paths = HashSet::new();
     let mut classpath = vec![];
     for library in &base_version_metadata.libraries {
-        classpath.extend(
-            library
-                .get_paths(&libraries_dir)
-                .into_iter()
-                .map(|p| {
-                    p.to_str()
-                        .ok_or(Box::new(LaunchError::InvalidPath(p.clone())))
-                        .map(|x| x.to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        )
+        if !library.rules_match() {
+            continue;
+        }
+
+        let path = library.get_path(&libraries_dir);
+        if let Some(path) = path {
+            if !path.exists() {
+                return Err(Box::new(LaunchError::MissingLibrary(path.clone())));
+            }
+            let path_str = path
+                .to_str()
+                .ok_or(Box::new(LaunchError::InvalidPath(path.clone())))?;
+
+            if !used_library_paths.contains(path_str) {
+                // vanilla mojang manifests have duplicates for some reason
+                used_library_paths.insert(path_str.to_string());
+                classpath.push(path_str.to_string());
+            }
+        }
     }
 
     let modpacks_dir = runtime_config::get_modpacks_dir(config);
@@ -114,7 +127,7 @@ pub async fn launch(
     }
 
     let variables: HashMap<String, String> = hashmap! {
-        "natives_directory".to_string() => minecraft_dir.join("natives").to_str().unwrap().to_string(),
+        "natives_directory".to_string() => natives_dir.to_str().unwrap().to_string(),
         "launcher_name".to_string() => "java-minecraft-launcher".to_string(),
         "launcher_version".to_string() => "1.6.84-j".to_string(),
         "classpath".to_string() => classpath_str,
@@ -133,6 +146,7 @@ pub async fn launch(
         "version_type".to_string() => "release".to_string(),
         "resolution_width".to_string() => "925".to_string(),
         "resolution_height".to_string() => "530".to_string(),
+        "user_properties".to_string() => "{}".to_string(),
     };
 
     let mut java_options = vec![
@@ -175,34 +189,29 @@ pub async fn launch(
     java_options.extend(process_args(
         &base_version_metadata
             .arguments
-            .jvm
-            .iter()
-            .map(|x| x as &dyn version_metadata::Argument)
-            .collect::<Vec<_>>(),
+            .jvm,
         &variables,
     ));
     let minecraft_options = process_args(
         &base_version_metadata
             .arguments
-            .game
-            .iter()
-            .map(|x| x as &dyn version_metadata::Argument)
-            .collect::<Vec<_>>(),
+            .game,
         &variables,
     );
 
-    let mut cmd = TokioCommand::new(
-        config
-            .java_paths
-            .get(&base_version_metadata.id)
-            .ok_or_else(|| {
-                format!(
-                    "Java path for version {} not found",
-                    base_version_metadata.id
-                )
-            })?
-            .clone(),
+    let java_path = config
+        .java_paths
+        .get(&base_version_metadata.id)
+        .ok_or_else(|| LaunchError::JavaPathNotFound(base_version_metadata.id.clone()))?;
+
+    info!(
+        "Launching java {} with arguments {:?}",
+        java_path, java_options
     );
+    info!("Main class: {}", base_version_metadata.main_class);
+    info!("Game arguments: {:?}", minecraft_options);
+
+    let mut cmd = TokioCommand::new(java_path);
     cmd.args(&java_options)
         .arg(&base_version_metadata.main_class)
         .args(&minecraft_options)

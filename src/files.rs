@@ -160,13 +160,20 @@ pub async fn get_download_entries(
 
     let mut download_entries = Vec::new();
     for entry in check_entries {
-        if !entry.path.exists()
-            || entry.remote_sha1.is_none()
-            || &entry.remote_sha1.unwrap()
+        let mut need_download = false;
+        if !entry.path.exists() {
+            need_download = true;
+        } else if let Some(remote_sha1) = &entry.remote_sha1 {
+            if remote_sha1
                 != hashes
                     .get(&entry.path)
                     .ok_or(CheckDownloadError::HashMissing(entry.path.clone()))?
-        {
+            {
+                need_download = true;
+            }
+        }
+
+        if need_download {
             download_entries.push(DownloadEntry {
                 url: entry.url.clone(),
                 path: entry.path.clone(),
