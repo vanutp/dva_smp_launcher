@@ -183,7 +183,7 @@ impl ModpackSyncState {
                 if self.status == ModpackSyncStatus::Synced {
                     self.local_version_manifest
                         .versions
-                        .retain(|i| i.id == selected_version_info.id);
+                        .retain(|i| i.id != selected_version_info.id);
                     self.local_version_manifest
                         .versions
                         .push(selected_version_info.clone());

@@ -59,7 +59,9 @@ impl LaunchState {
                         self.status = if exit_status.success() {
                             LauncherStatus::NotLaunched
                         } else {
-                            LauncherStatus::ProcessErrorCode(exit_status.code().unwrap_or(-1).to_string())
+                            LauncherStatus::ProcessErrorCode(
+                                exit_status.code().unwrap_or(-1).to_string(),
+                            )
                         };
                     }
                     Ok(None) => {}

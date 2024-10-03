@@ -12,13 +12,66 @@ use crate::{
     progress,
 };
 
-use super::version_manifest::VersionInfo;
+use super::{overrides, version_manifest::VersionInfo};
+
+fn get_os_name() -> String {
+    if cfg!(windows) {
+        "windows".to_string()
+    } else if cfg!(target_os = "macos") {
+        "osx".to_string()
+    } else if cfg!(target_os = "linux") {
+        "linux".to_string()
+    } else {
+        unimplemented!("Unsupported OS");
+    }
+}
+
+fn get_system_arch() -> String {
+    match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "arm" => "arm32",
+        arch => arch,
+    }
+    .to_string()
+}
+
+fn get_arch_os_name() -> String {
+    get_os_name()
+        + match get_system_arch().as_str() {
+            "arm32" => "-arm32",
+            "arm64" => "-arm64",
+            _ => "",
+        }
+}
+
+#[derive(Deserialize, Clone)]
+struct Os {
+    name: Option<String>,
+    arch: Option<String>,
+}
+
+impl Os {
+    pub(in crate::modpack) fn matches(&self, os_arch_name: &str) -> bool {
+        if let Some(self_arch) = &self.arch {
+            let parts = os_arch_name.split('-').collect::<Vec<&str>>();
+            let os_name = parts[0];
+            let arch = parts.get(1).copied().unwrap_or("x86");
+            return self.name.as_ref().map_or(true, |name| name == os_name) && self_arch == arch;
+        }
+
+        if let Some(self_name) = &self.name {
+            self_name == os_arch_name
+        } else {
+            true
+        }
+    }
+}
 
 #[derive(Deserialize, Clone)]
 pub struct Rule {
     action: String,
     os: Option<Os>,
-    pub features: Option<HashMap<String, bool>>,
+    features: Option<HashMap<String, bool>>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -37,41 +90,16 @@ impl ArgumentValue {
     }
 }
 
-fn get_metadata_os_name() -> String {
-    if cfg!(windows) {
-        "windows".to_string()
-    } else if cfg!(target_os = "macos") {
-        "osx".to_string()
-    } else if cfg!(target_os = "linux") {
-        "linux".to_string()
-    } else {
-        unimplemented!("Unsupported OS");
-    }
-}
-
-#[derive(Deserialize, Clone)]
-struct Os {
-    name: Option<String>,
-    arch: Option<String>,
-}
-
 impl Rule {
-    pub fn is_allowed(&self) -> Option<bool> {
+    pub fn is_allowed(&self, os_arch_name: &str) -> Option<bool> {
         let is_allowed = self.action == "allow";
         let matching_features = vec!["has_custom_resolution"];
 
         let mut matches = true;
 
         if let Some(os) = &self.os {
-            if let Some(name) = &os.name {
-                if name != &get_metadata_os_name() {
-                    matches = false;
-                }
-            }
-            if let Some(arch) = &os.arch {
-                if arch != std::env::consts::ARCH {
-                    matches = false;
-                }
+            if !os.matches(os_arch_name) {
+                matches = false;
             }
         }
 
@@ -93,10 +121,10 @@ impl Rule {
     }
 }
 
-fn rules_apply(rules: &Vec<Rule>) -> bool {
+fn rules_apply(rules: &Vec<Rule>, os_arch_name: &str) -> bool {
     let mut some_allowed = false;
     for rule in rules {
-        if let Some(is_allowed) = rule.is_allowed() {
+        if let Some(is_allowed) = rule.is_allowed(os_arch_name) {
             if !is_allowed {
                 return false;
             }
@@ -120,23 +148,18 @@ pub enum VariableArgument {
 }
 
 impl VariableArgument {
-    pub fn get_values(&self) -> Vec<&str> {
+    pub fn get_matching_values(&self) -> Vec<&str> {
         match self {
             VariableArgument::Simple(s) => vec![s.as_str()],
             VariableArgument::Complex(complex) => {
-                if rules_apply(&complex.rules) {
+                if rules_apply(&complex.rules, get_arch_os_name().as_str())
+                    || rules_apply(&complex.rules, get_os_name().as_str())
+                {
                     complex.value.get_values()
                 } else {
                     vec![]
                 }
             }
-        }
-    }
-
-    pub fn apply(&self) -> bool {
-        match self {
-            VariableArgument::Simple(_) => true,
-            VariableArgument::Complex(complex) => rules_apply(&complex.rules),
         }
     }
 }
@@ -160,39 +183,39 @@ pub struct JavaVersion {
     pub major_version: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Download {
-    pub path: String,
+    pub path: Option<String>,
     pub sha1: String,
     pub url: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct LibraryDownloads {
     pub artifact: Option<Download>,
     pub classifiers: Option<HashMap<String, Download>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct LibraryExtract {
     pub exclude: Option<Vec<String>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Library {
-    name: String,
-    downloads: Option<LibraryDownloads>,
-    rules: Option<Vec<Rule>>,
+    pub(in crate::modpack) name: String,
+    pub(in crate::modpack) downloads: Option<LibraryDownloads>,
+    pub(in crate::modpack) rules: Option<Vec<Rule>>,
     url: Option<String>,
     sha1: Option<String>,
-    natives: Option<HashMap<String, String>>,
+    pub(in crate::modpack) natives: Option<HashMap<String, String>>,
     extract: Option<LibraryExtract>,
 }
 
 impl Library {
-    pub fn rules_match(&self) -> bool {
+    pub(in crate::modpack) fn rules_match(&self, os_arch_name: &str) -> bool {
         if let Some(rules) = &self.rules {
-            rules_apply(rules)
+            rules_apply(rules, os_arch_name)
         } else {
             true
         }
@@ -217,16 +240,23 @@ impl Library {
         )
     }
 
+    fn get_natives_path(&self, libraries_dir: &Path, download: &Download) -> PathBuf {
+        let filename = download.url.split('/').last().unwrap_or(&download.url);
+        libraries_dir.join(filename)
+    }
+
     pub fn get_check_download_enties(&self, libraries_dir: &Path) -> Vec<CheckDownloadEntry> {
         let mut entries = vec![];
 
         if let Some(downloads) = &self.downloads {
             if let Some(artifact) = &downloads.artifact {
-                entries.push(CheckDownloadEntry {
-                    url: artifact.url.clone(),
-                    remote_sha1: Some(artifact.sha1.clone()),
-                    path: libraries_dir.join(&artifact.path),
-                });
+                if let Some(path) = self.get_path(libraries_dir) {
+                    entries.push(CheckDownloadEntry {
+                        url: artifact.url.clone(),
+                        remote_sha1: Some(artifact.sha1.clone()),
+                        path,
+                    });
+                }
             }
         }
         if let Some(url) = &self.url {
@@ -244,7 +274,8 @@ impl Library {
                         entries.push(CheckDownloadEntry {
                             url: download.url.clone(),
                             remote_sha1: Some(download.sha1.clone()),
-                            path: libraries_dir.join(&download.path),
+                            path: libraries_dir
+                                .join(self.get_natives_path(libraries_dir, download)),
                         });
                     }
                 }
@@ -257,7 +288,11 @@ impl Library {
     pub fn get_path(&self, libraries_dir: &Path) -> Option<PathBuf> {
         if let Some(downloads) = &self.downloads {
             if let Some(artifact) = &downloads.artifact {
-                return Some(libraries_dir.join(&artifact.path));
+                if let Some(path) = &artifact.path {
+                    return Some(libraries_dir.join(path));
+                } else {
+                    return Some(libraries_dir.join(&self.get_path_from_name()));
+                }
             }
         }
         if self.url.is_some() {
@@ -272,8 +307,12 @@ impl Library {
     }
 
     fn get_natives_name(&self) -> Option<String> {
-        let os_name = get_metadata_os_name();
-        self.natives.as_ref()?.get(&os_name).cloned()
+        let natives = self.natives.as_ref()?;
+        if let Some(natives_name) = natives.get(&get_arch_os_name()) {
+            return Some(natives_name.clone());
+        }
+
+        None
     }
 
     pub fn get_natives_paths(&self, libraries_dir: &Path) -> Vec<PathBuf> {
@@ -282,7 +321,9 @@ impl Library {
             if let Some(downloads) = &self.downloads {
                 if let Some(classifiers) = &downloads.classifiers {
                     if let Some(download) = classifiers.get(&natives_name) {
-                        paths.push(libraries_dir.join(&download.path));
+                        paths.push(
+                            libraries_dir.join(self.get_natives_path(libraries_dir, download)),
+                        );
                     }
                 }
             }
@@ -294,6 +335,25 @@ impl Library {
 
     pub fn get_extract(&self) -> Option<&LibraryExtract> {
         self.extract.as_ref()
+    }
+
+    pub(in crate::modpack) fn get_group_id(&self) -> String {
+        let parts: Vec<&str> = self.name.split(':').collect();
+        parts[0].to_string()
+    }
+
+    pub(in crate::modpack) fn get_artifact_id(&self) -> String {
+        let parts: Vec<&str> = self.name.split(':').collect();
+        parts[1].to_string()
+    }
+
+    pub(in crate::modpack) fn get_version(&self) -> String {
+        let parts: Vec<&str> = self.name.split(':').collect();
+        parts[2].to_string()
+    }
+
+    pub(in crate::modpack) fn get_full_name(&self) -> String {
+        self.name.clone()
     }
 }
 
@@ -313,37 +373,27 @@ struct VersionMetadata {
     arguments: Option<Arguments>,
 
     #[serde(rename = "assetIndex")]
-    pub asset_index: Option<AssetIndex>,
+    asset_index: Option<AssetIndex>,
 
-    pub downloads: Option<Downloads>,
-    pub id: String,
+    downloads: Option<Downloads>,
+    id: String,
 
     #[serde(rename = "javaVersion")]
-    pub java_version: Option<JavaVersion>,
-    pub libraries: Vec<Library>,
+    java_version: Option<JavaVersion>,
+    libraries: Vec<Library>,
 
     #[serde(rename = "mainClass")]
-    pub main_class: String,
+    main_class: String,
 
     #[serde(rename = "inheritsFrom")]
-    pub inherits_from: Option<String>,
+    inherits_from: Option<String>,
 
     #[serde(rename = "minecraftArguments")]
     minecraft_arguments: Option<String>,
 }
+
 lazy_static::lazy_static! {
     static ref LEGACY_JVM_ARGS: Vec<VariableArgument> = vec![
-        // VariableArgument::Complex(ComplexArgument {
-        //     value: ArgumentValue::String("-XstartOnFirstThread".to_string()),
-        //     rules: vec![Rule{
-        //         action: "allow".to_string(),
-        //         os: Some(Os {
-        //             name: Some("osx".to_string()),
-        //             arch: None,
-        //         }),
-        //         features: None,
-        //     }],
-        // }),
         VariableArgument::Complex(ComplexArgument {
             value: ArgumentValue::String("-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump".to_string()),
             rules: vec![Rule{
@@ -421,7 +471,7 @@ pub struct MergedVersionMetadata {
     pub asset_index: AssetIndex,
     pub id: String,
     pub java_version: JavaVersion,
-    pub libraries: Vec<Library>,
+    libraries: Vec<Library>,
     pub main_class: String,
     pub downloads: Option<Downloads>,
 }
@@ -447,6 +497,14 @@ impl MergedVersionMetadata {
 
     pub fn get_client_jar_path(&self, versions_dir: &Path) -> PathBuf {
         versions_dir.join(&self.id).join(format!("{}.jar", self.id))
+    }
+
+    pub fn get_libraries(&self) -> Vec<Library> {
+        let overridden = overrides::with_overrides(self.libraries.iter().collect());
+        overridden
+            .into_iter()
+            .filter(|l| l.rules_match(get_arch_os_name().as_str()))
+            .collect()
     }
 }
 

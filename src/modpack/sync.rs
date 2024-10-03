@@ -112,11 +112,7 @@ async fn get_libraries_downloads(
     let mut sha1_urls = HashMap::<PathBuf, String>::new();
     let mut check_download_entries: Vec<CheckDownloadEntry> = Vec::new();
 
-    for library in libraries.iter() {
-        if !library.rules_match() {
-            continue;
-        }
-
+    for library in libraries {
         for entry in library.get_check_download_enties(libraries_dir) {
             if entry.remote_sha1.is_some() || !entry.path.exists() {
                 check_download_entries.push(entry);
@@ -177,20 +173,15 @@ fn extract_natives(
     libraries_dir: &Path,
     natives_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    for library in libraries.iter() {
-        if !library.rules_match() {
-            continue;
-        }
-
+    for library in libraries {
         for natives_path in library.get_natives_paths(libraries_dir) {
-            let exclude = library.get_extract()
-                .map(|x|
-                    x.exclude
-                        .clone()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .collect::<HashSet<_>>()
-                );
+            let exclude = library.get_extract().map(|x| {
+                x.exclude
+                    .clone()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect::<HashSet<_>>()
+            });
             extract_files(&natives_path, &natives_dir, exclude)?;
         }
     }
@@ -298,8 +289,8 @@ pub async fn sync_modpack(
 
     check_download_entries.push(get_client_download_entry(version_metadata, &versions_dir)?);
 
-    check_download_entries
-        .extend(get_libraries_downloads(&version_metadata.base.libraries, &libraries_dir).await?);
+    let libraries = version_metadata.base.get_libraries();
+    check_download_entries.extend(get_libraries_downloads(&libraries, &libraries_dir).await?);
 
     if let Some(extra) = &version_metadata.extra {
         check_download_entries
@@ -329,6 +320,10 @@ pub async fn sync_modpack(
     let download_entries =
         files::get_download_entries(check_download_entries, progress_bar.clone()).await?;
 
+    let libraries_changed = download_entries
+        .iter()
+        .any(|entry| entry.path.starts_with(&libraries_dir));
+
     progress_bar.set_message(LangMessage::DownloadingFiles);
     files::download_files(download_entries, progress_bar).await?;
 
@@ -336,11 +331,9 @@ pub async fn sync_modpack(
         asset_metadata::save_asset_metadata(&asset_index.id, &asset_metadata, &assets_dir).await?;
     }
 
-    extract_natives(
-        &version_metadata.base.libraries,
-        &libraries_dir,
-        &natives_dir,
-    )?;
+    if libraries_changed {
+        extract_natives(&libraries, &libraries_dir, &natives_dir)?;
+    }
 
     Ok(())
 }

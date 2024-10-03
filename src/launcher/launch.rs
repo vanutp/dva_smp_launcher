@@ -1,4 +1,4 @@
-use log::info;
+use log::debug;
 use maplit::hashmap;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -45,13 +45,11 @@ fn process_args(
 ) -> Vec<String> {
     let mut options = vec![];
     for arg in args {
-        if arg.apply() {
-            options.extend(
-                arg.get_values()
-                    .iter()
-                    .map(|v| replace_launch_config_variables(v.to_string(), variables)),
-            );
-        }
+        options.extend(
+            arg.get_matching_values()
+                .iter()
+                .map(|v| replace_launch_config_variables(v.to_string(), variables)),
+        );
     }
     options
 }
@@ -89,11 +87,7 @@ pub async fn launch(
 
     let mut used_library_paths = HashSet::new();
     let mut classpath = vec![];
-    for library in &base_version_metadata.libraries {
-        if !library.rules_match() {
-            continue;
-        }
-
+    for library in base_version_metadata.get_libraries() {
         let path = library.get_path(&libraries_dir);
         if let Some(path) = path {
             if !path.exists() {
@@ -187,29 +181,22 @@ pub async fn launch(
     }
 
     java_options.extend(process_args(
-        &base_version_metadata
-            .arguments
-            .jvm,
+        &base_version_metadata.arguments.jvm,
         &variables,
     ));
-    let minecraft_options = process_args(
-        &base_version_metadata
-            .arguments
-            .game,
-        &variables,
-    );
+    let minecraft_options = process_args(&base_version_metadata.arguments.game, &variables);
 
     let java_path = config
         .java_paths
         .get(&base_version_metadata.id)
         .ok_or_else(|| LaunchError::JavaPathNotFound(base_version_metadata.id.clone()))?;
 
-    info!(
+    debug!(
         "Launching java {} with arguments {:?}",
         java_path, java_options
     );
-    info!("Main class: {}", base_version_metadata.main_class);
-    info!("Game arguments: {:?}", minecraft_options);
+    debug!("Main class: {}", base_version_metadata.main_class);
+    debug!("Game arguments: {:?}", minecraft_options);
 
     let mut cmd = TokioCommand::new(java_path);
     cmd.args(&java_options)

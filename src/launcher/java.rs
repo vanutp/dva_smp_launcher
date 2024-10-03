@@ -59,9 +59,40 @@ fn get_installation(path: &Path) -> Option<JavaInstallation> {
     Some(JavaInstallation { version, path })
 }
 
+#[cfg(not(target_os = "windows"))]
+fn check_arch(java_version_output: &str) -> bool {
+    let arch = std::env::consts::ARCH;
+    match arch {
+        "x86_64" | "amd64" => java_version_output.contains("x86-64"),
+        "aarch64" => {
+            java_version_output.contains("aarch64") || java_version_output.contains("arm64")
+        }
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn check_arch(_: &str) -> bool {
+    true
+}
+
 fn does_match(java: &JavaInstallation, required_version: &str) -> bool {
-    java.version.starts_with(&format!("{}", required_version))
-        || java.version.starts_with(&format!("1.{}", required_version))
+    if !(java.version.starts_with(&format!("{}", required_version))
+        || java.version.starts_with(&format!("1.{}", required_version)))
+    {
+        return false;
+    }
+
+    if std::env::consts::ARCH != "aarch64" {
+        return true;
+    }
+    let output = Command::new("file").arg(&java.path).output();
+    if let Ok(output) = output {
+        let output = String::from_utf8_lossy(&output.stdout);
+        check_arch(&output)
+    } else {
+        false
+    }
 }
 
 pub fn check_java(required_version: &str, path: &Path) -> bool {
