@@ -289,7 +289,7 @@ pub async fn sync_modpack(
 
     check_download_entries.push(get_client_download_entry(version_metadata, &versions_dir)?);
 
-    let libraries = version_metadata.base.get_libraries();
+    let libraries = version_metadata.base.get_libraries(version_metadata.base.hierarchy_ids.clone());
     check_download_entries.extend(get_libraries_downloads(&libraries, &libraries_dir).await?);
 
     if let Some(extra) = &version_metadata.extra {

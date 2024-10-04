@@ -342,16 +342,6 @@ impl Library {
         parts[0].to_string()
     }
 
-    pub(in crate::modpack) fn get_artifact_id(&self) -> String {
-        let parts: Vec<&str> = self.name.split(':').collect();
-        parts[1].to_string()
-    }
-
-    pub(in crate::modpack) fn get_version(&self) -> String {
-        let parts: Vec<&str> = self.name.split(':').collect();
-        parts[2].to_string()
-    }
-
     pub(in crate::modpack) fn get_full_name(&self) -> String {
         self.name.clone()
     }
@@ -474,6 +464,7 @@ pub struct MergedVersionMetadata {
     libraries: Vec<Library>,
     pub main_class: String,
     pub downloads: Option<Downloads>,
+    pub hierarchy_ids: Vec<String>,
 }
 
 impl MergedVersionMetadata {
@@ -485,13 +476,14 @@ impl MergedVersionMetadata {
             asset_index: version_metadata
                 .asset_index
                 .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
-            id: version_metadata.id,
+            id: version_metadata.id.clone(),
             java_version: version_metadata
                 .java_version
                 .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
             libraries: version_metadata.libraries,
             main_class: version_metadata.main_class,
             downloads: version_metadata.downloads,
+            hierarchy_ids: vec![version_metadata.id],
         })
     }
 
@@ -499,8 +491,8 @@ impl MergedVersionMetadata {
         versions_dir.join(&self.id).join(format!("{}.jar", self.id))
     }
 
-    pub fn get_libraries(&self) -> Vec<Library> {
-        let overridden = overrides::with_overrides(self.libraries.iter().collect());
+    pub fn get_libraries(&self, version_ids: Vec<String>) -> Vec<Library> {
+        let overridden = overrides::with_overrides(self.libraries.iter().collect(), version_ids);
         overridden
             .into_iter()
             .filter(|l| l.rules_match(get_arch_os_name().as_str()))
@@ -509,21 +501,20 @@ impl MergedVersionMetadata {
 }
 
 fn merge_two_metadata(
-    parent_metadata: &mut MergedVersionMetadata,
-    child_metadata: VersionMetadata,
+    child_metadata: &mut MergedVersionMetadata,
+    parent_metadata: VersionMetadata,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(arguments) = child_metadata.arguments {
-        parent_metadata.arguments.game.extend(arguments.game);
-        parent_metadata.arguments.jvm.extend(arguments.jvm);
+    if let Some(arguments) = parent_metadata.arguments {
+        child_metadata.arguments.game.extend(arguments.game);
+        child_metadata.arguments.jvm.extend(arguments.jvm);
     }
-    parent_metadata.libraries.extend(child_metadata.libraries);
+    child_metadata.libraries.extend(parent_metadata.libraries);
 
-    parent_metadata.id = child_metadata.id;
-    parent_metadata.main_class = child_metadata.main_class;
-
-    if parent_metadata.downloads.is_none() && child_metadata.downloads.is_some() {
-        parent_metadata.downloads = child_metadata.downloads;
+    if child_metadata.downloads.is_none() && parent_metadata.downloads.is_some() {
+        child_metadata.downloads = parent_metadata.downloads;
     }
+
+    child_metadata.hierarchy_ids.push(parent_metadata.id);
 
     Ok(())
 }

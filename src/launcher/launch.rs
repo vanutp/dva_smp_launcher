@@ -87,7 +87,7 @@ pub async fn launch(
 
     let mut used_library_paths = HashSet::new();
     let mut classpath = vec![];
-    for library in base_version_metadata.get_libraries() {
+    for library in base_version_metadata.get_libraries(base_version_metadata.hierarchy_ids.clone()) {
         let path = library.get_path(&libraries_dir);
         if let Some(path) = path {
             if !path.exists() {

@@ -41,6 +41,8 @@ pub fn get_display_launcher_name() -> String {
 
 pub const LAUNCHER_ICON: &[u8] = include_bytes!("../../assets/potato_launcher.png");
 
-pub const LIBRARY_PATCHES: &str = include_str!("../../meta/library-patches.json");
+pub const LIBRARY_OVERRIDES: &str = include_str!("../../meta/library-overrides.json");
 
 pub const MOJANG_LIBRARY_PATCHES: &str = include_str!("../../meta/mojang-library-patches.json");
+
+pub const LWJGL_VERSION_MATCHES: &str = include_str!("../../meta/lwjgl-version-matches.json");

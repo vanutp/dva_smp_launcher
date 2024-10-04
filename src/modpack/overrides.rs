@@ -1,4 +1,4 @@
-use log::debug;
+use log::{info, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
@@ -13,66 +13,59 @@ pub struct Replacement {
 }
 
 #[derive(Deserialize)]
-pub struct LibraryPatches {
-    groups_to_remove: HashSet<String>,
-    artifact_id_to_match: String,
-    match_ignore_os: Vec<String>,
+pub struct LibraryOverrides {
+    lwjgl_group_ids: HashSet<String>,
     overrides: Vec<Replacement>,
 }
 
 lazy_static::lazy_static! {
-    static ref LIBRARY_PATCHES: LibraryPatches = {
-        let overrides = build_config::LIBRARY_PATCHES;
+    static ref LIBRARY_OVERRIDES: LibraryOverrides = {
+        let overrides = build_config::LIBRARY_OVERRIDES;
         serde_json::from_str(overrides).expect("Failed to parse library patches")
     };
 }
 
 #[derive(Deserialize)]
-pub struct LibraryOverride {
+pub struct LibraryPatch {
     downloads: Option<LibraryDownloads>,
     natives: Option<HashMap<String, String>>,
     rules: Option<Vec<Rule>>,
 }
 
 #[derive(Deserialize)]
-pub struct LibraryOverrides {
+pub struct LibraryPatches {
     #[serde(rename = "match")]
     match_: HashSet<String>,
 
     #[serde(rename = "override")]
-    override_: Option<LibraryOverride>,
+    override_: Option<LibraryPatch>,
 
     #[serde(rename = "additionalLibraries")]
     additional_libraries: Option<Vec<Library>>,
 }
 
 lazy_static::lazy_static! {
-    static ref LIBRARY_OVERRIDES: Vec<LibraryOverrides> = {
+    static ref LIBRARY_PATCHES: Vec<LibraryPatches> = {
         let overrides = build_config::MOJANG_LIBRARY_PATCHES;
         serde_json::from_str(overrides).expect("Failed to parse library overrides")
     };
 }
 
-fn with_mojang_overrides(libraries: Vec<&Library>) -> Vec<Library> {
+lazy_static::lazy_static! {
+    static ref LWJGL_VERSION_MATCHES: HashMap<String, String> = {
+        let matches = build_config::LWJGL_VERSION_MATCHES;
+        serde_json::from_str(matches).expect("Failed to parse lwjgl version matches")
+    };
+}
+
+fn with_mojang_patches(libraries: Vec<&Library>) -> Vec<Library> {
     let mut result = vec![];
     for library in libraries {
-        if LIBRARY_PATCHES
-            .groups_to_remove
-            .contains(&library.get_group_id())
-        {
-            debug!(
-                "Not modifying library {} because it is in the groups to remove",
-                library.get_full_name()
-            );
-            result.push(library.clone());
-            continue;
-        }
-
         let mut library = library.clone();
-        for override_ in &*LIBRARY_OVERRIDES {
+        for override_ in &*LIBRARY_PATCHES {
             if override_.match_.contains(&library.get_full_name()) {
                 if let Some(override_) = &override_.override_ {
-                    debug!("Modifying library: {}", library.get_full_name());
+                    info!("Modifying library: {}", library.get_full_name());
                     if let Some(downloads) = &override_.downloads {
                         library.downloads = Some(downloads.clone());
                     }
@@ -84,7 +77,7 @@ fn with_mojang_overrides(libraries: Vec<&Library>) -> Vec<Library> {
                     }
                 }
                 if let Some(additional_libraries) = &override_.additional_libraries {
-                    debug!(
+                    info!(
                         "Adding additional libraries for {}",
                         library.get_full_name()
                     );
@@ -95,60 +88,48 @@ fn with_mojang_overrides(libraries: Vec<&Library>) -> Vec<Library> {
         result.push(library.clone());
     }
 
-    debug!("Processed {} libraries with mojang overrides", result.len());
+    info!("Processed {} libraries with mojang overrides", result.len());
 
     result
 }
 
-pub fn with_overrides(libraries: Vec<&Library>) -> Vec<Library> {
-    let libraries = with_mojang_overrides(libraries);
-
-    let mut result = vec![];
-    let mut override_version = None;
-    for library in libraries {
-        if LIBRARY_PATCHES
-            .groups_to_remove
-            .contains(&library.get_group_id())
-        {
-            debug!(
-                "Skipping library {} because it is in the groups to remove",
-                library.get_full_name()
-            );
-            if library.get_artifact_id() == LIBRARY_PATCHES.artifact_id_to_match {
-                let mut is_ignored = false;
-                for ignored_os in &LIBRARY_PATCHES.match_ignore_os {
-                    if library.rules_match(&ignored_os) {
-                        debug!("Not selecting library {} to get the version because it matches an ignored OS", library.get_full_name());
-                        is_ignored = true;
-                        continue;
-                    }
-                }
-
-                if is_ignored {
-                    continue;
-                }
-
-                debug!(
-                    "Selecting library {} to get the version",
-                    library.get_full_name()
-                );
-                override_version = Some(library.get_version());
+pub fn with_overrides(libraries: Vec<&Library>, version_ids: Vec<String>) -> Vec<Library> {
+    let mut main_version = None;
+    for version_id in version_ids {
+        if let Some(version_match) = LWJGL_VERSION_MATCHES.get(&version_id) {
+            if main_version.is_some() {
+                warn!("Multiple main lwjgl versions found");
             }
-            continue;
+            info!("Found main lwjgl version: {}", version_match);
+            main_version = Some(version_match.clone());
         }
-        result.push(library.clone());
+    }
+    if main_version.is_none() {
+        info!("No main lwjgl version found");
     }
 
-    if let Some(override_version) = override_version {
-        for override_ in &LIBRARY_PATCHES.overrides {
-            if override_.version == override_version {
-                debug!("Adding override libraries for version {}", override_version);
+    let libraries = with_mojang_patches(libraries);
+
+    let mut result = vec![];
+    for library in libraries {
+        if !LIBRARY_OVERRIDES
+            .lwjgl_group_ids
+            .contains(&library.get_group_id())
+        {
+            result.push(library.clone());
+        }
+    }
+
+    if let Some(main_version) = main_version {
+        for override_ in &LIBRARY_OVERRIDES.overrides {
+            if override_.version == main_version {
+                info!("Adding override libraries for version {}", main_version);
                 result.extend(override_.libraries.clone());
             }
         }
     }
 
-    debug!("Processed {} libraries with overrides", result.len());
+    info!("Processed {} libraries with overrides", result.len());
 
     result
 }
