@@ -186,7 +186,6 @@ pub struct JavaVersion {
 
 #[derive(Deserialize, Clone)]
 pub struct Download {
-    pub path: Option<String>,
     pub sha1: String,
     pub url: String,
 }
@@ -288,12 +287,8 @@ impl Library {
 
     pub fn get_path(&self, libraries_dir: &Path) -> Option<PathBuf> {
         if let Some(downloads) = &self.downloads {
-            if let Some(artifact) = &downloads.artifact {
-                if let Some(path) = &artifact.path {
-                    return Some(libraries_dir.join(path));
-                } else {
-                    return Some(libraries_dir.join(&self.get_path_from_name()));
-                }
+            if downloads.artifact.is_some() {
+                return Some(libraries_dir.join(&self.get_path_from_name()));
             }
         }
         if self.url.is_some() {
@@ -349,14 +344,8 @@ impl Library {
 }
 
 #[derive(Deserialize)]
-pub struct ClientDownload {
-    pub sha1: String,
-    pub url: String,
-}
-
-#[derive(Deserialize)]
 pub struct Downloads {
-    pub client: Option<ClientDownload>,
+    pub client: Option<Download>,
 }
 
 #[derive(Deserialize)]

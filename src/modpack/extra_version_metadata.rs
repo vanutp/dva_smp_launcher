@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::files;
 
-use super::{version_manifest::VersionInfo, version_metadata::ClientDownload};
+use super::{version_manifest::VersionInfo, version_metadata::Download};
 
 #[derive(Deserialize)]
 pub struct Object {
@@ -19,7 +19,7 @@ pub struct ExtraVersionMetadata {
     pub include_no_overwrite: Vec<String>,
     pub objects: Vec<Object>,
     pub resources_url_base: Option<String>,
-    pub client_download_override: Option<ClientDownload>,
+    pub client_download_override: Option<Download>,
 }
 
 fn get_extra_version_metadata_path(versions_dir: &Path, version_id: &str) -> PathBuf {
