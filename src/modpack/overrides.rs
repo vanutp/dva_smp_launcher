@@ -111,22 +111,24 @@ pub fn with_overrides(libraries: Vec<&Library>, version_ids: Vec<String>) -> Vec
     let libraries = with_mojang_patches(libraries);
 
     let mut result = vec![];
-    for library in libraries {
-        if !LIBRARY_OVERRIDES
-            .lwjgl_group_ids
-            .contains(&library.get_group_id())
-        {
-            result.push(library.clone());
-        }
-    }
-
     if let Some(main_version) = main_version {
+        for library in libraries {
+            if !LIBRARY_OVERRIDES
+                .lwjgl_group_ids
+                .contains(&library.get_group_id())
+            {
+                result.push(library.clone());
+            }
+        }
+
         for override_ in &LIBRARY_OVERRIDES.overrides {
             if override_.version == main_version {
                 info!("Adding override libraries for version {}", main_version);
                 result.extend(override_.libraries.clone());
             }
         }
+    } else {
+        result = libraries;
     }
 
     info!("Processed {} libraries with overrides", result.len());

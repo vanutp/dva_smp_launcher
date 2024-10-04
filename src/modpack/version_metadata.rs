@@ -51,19 +51,22 @@ struct Os {
 }
 
 impl Os {
-    pub(in crate::modpack) fn matches(&self, os_arch_name: &str) -> bool {
+    pub(in crate::modpack) fn matches(&self) -> bool {
+        let os_name = get_os_name();
+        let os_arch = get_system_arch();
+
         if let Some(self_arch) = &self.arch {
-            let parts = os_arch_name.split('-').collect::<Vec<&str>>();
-            let os_name = parts[0];
-            let arch = parts.get(1).copied().unwrap_or("x86");
-            return self.name.as_ref().map_or(true, |name| name == os_name) && self_arch == arch;
+            if self_arch != &os_arch {
+                return false;
+            }
+        }
+        if let Some(self_name) = &self.name {
+            if self_name != &os_name && self_name != &format!("{}-{}", os_name, os_arch) {
+                return false;
+            }
         }
 
-        if let Some(self_name) = &self.name {
-            self_name == os_arch_name
-        } else {
-            true
-        }
+        true
     }
 }
 
@@ -91,14 +94,14 @@ impl ArgumentValue {
 }
 
 impl Rule {
-    pub fn is_allowed(&self, os_arch_name: &str) -> Option<bool> {
+    pub fn is_allowed(&self) -> Option<bool> {
         let is_allowed = self.action == "allow";
         let matching_features = vec!["has_custom_resolution"];
 
         let mut matches = true;
 
         if let Some(os) = &self.os {
-            if !os.matches(os_arch_name) {
+            if !os.matches() {
                 matches = false;
             }
         }
@@ -121,10 +124,10 @@ impl Rule {
     }
 }
 
-fn rules_apply(rules: &Vec<Rule>, os_arch_name: &str) -> bool {
+fn rules_apply(rules: &Vec<Rule>) -> bool {
     let mut some_allowed = false;
     for rule in rules {
-        if let Some(is_allowed) = rule.is_allowed(os_arch_name) {
+        if let Some(is_allowed) = rule.is_allowed() {
             if !is_allowed {
                 return false;
             }
@@ -152,9 +155,7 @@ impl VariableArgument {
         match self {
             VariableArgument::Simple(s) => vec![s.as_str()],
             VariableArgument::Complex(complex) => {
-                if rules_apply(&complex.rules, get_arch_os_name().as_str())
-                    || rules_apply(&complex.rules, get_os_name().as_str())
-                {
+                if rules_apply(&complex.rules) {
                     complex.value.get_values()
                 } else {
                     vec![]
@@ -213,9 +214,9 @@ pub struct Library {
 }
 
 impl Library {
-    pub(in crate::modpack) fn rules_match(&self, os_arch_name: &str) -> bool {
+    pub(in crate::modpack) fn rules_match(&self) -> bool {
         if let Some(rules) = &self.rules {
-            rules_apply(rules, os_arch_name)
+            rules_apply(rules)
         } else {
             true
         }
@@ -495,7 +496,7 @@ impl MergedVersionMetadata {
         let overridden = overrides::with_overrides(self.libraries.iter().collect(), version_ids);
         overridden
             .into_iter()
-            .filter(|l| l.rules_match(get_arch_os_name().as_str()))
+            .filter(|l| l.rules_match())
             .collect()
     }
 }
