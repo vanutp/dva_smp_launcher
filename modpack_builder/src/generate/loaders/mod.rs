@@ -1,2 +1,2 @@
-pub mod vanilla;
 pub mod generator;
+pub mod vanilla;

@@ -3,9 +3,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::{
+    files::{self, CheckDownloadEntry},
+    paths::get_asset_index_path,
+    version::version_metadata::AssetIndex,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use crate::{files::{self, CheckDownloadEntry}, paths::get_asset_index_path, version::version_metadata::AssetIndex};
 
 #[derive(Serialize, Deserialize)]
 pub struct ObjectData {
@@ -26,10 +30,7 @@ impl AssetsMetadata {
         Ok(response)
     }
 
-    async fn get_path(
-        assets_dir: &Path,
-        asset_id: &str,
-    ) -> Result<PathBuf, std::io::Error> {
+    async fn get_path(assets_dir: &Path, asset_id: &str) -> Result<PathBuf, std::io::Error> {
         tokio::fs::create_dir_all(assets_dir.join("indexes")).await?;
         Ok(assets_dir
             .join("indexes")
@@ -50,17 +51,17 @@ impl AssetsMetadata {
         assets_dir: &Path,
     ) -> Result<AssetsMetadata, Box<dyn std::error::Error + Send + Sync>> {
         let mut needed_index_download = false;
-    
+
         let asset_index_path = get_asset_index_path(assets_dir, &asset_index.id);
         if !asset_index_path.exists() {
             needed_index_download = true;
+        } else {
+            let local_asset_index_hash = files::hash_file(&asset_index_path).await?;
+            if local_asset_index_hash != asset_index.sha1 {
+                needed_index_download = true;
+            }
         }
-    
-        let local_asset_index_hash = files::hash_file(&asset_index_path).await?;
-        if local_asset_index_hash != asset_index.sha1 {
-            needed_index_download = true;
-        }
-    
+
         Ok(if needed_index_download {
             AssetsMetadata::fetch(&asset_index.url).await?
         } else {
@@ -74,7 +75,7 @@ impl AssetsMetadata {
         resources_url_base: &str,
     ) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
         let mut download_entries = vec![];
-    
+
         download_entries.extend(self.objects.iter().map(|(_, object)| {
             CheckDownloadEntry {
                 url: format!(
@@ -90,10 +91,9 @@ impl AssetsMetadata {
                 remote_sha1: None, // do not check sha1 for assets since it's in the path
             }
         }));
-    
+
         Ok(download_entries)
     }
-
 
     pub async fn save_to_file(
         &self,

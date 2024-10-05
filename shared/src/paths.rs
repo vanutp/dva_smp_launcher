@@ -71,15 +71,13 @@ pub fn get_client_jar_path(data_dir: &Path, id: &str) -> PathBuf {
 pub fn get_versions_extra_dir(data_dir: &Path) -> PathBuf {
     let versions_extra_dir = get_modpacks_dir(data_dir).join("versions_extra");
     if !versions_extra_dir.exists() {
-        std::fs::create_dir_all(&versions_extra_dir).expect("Failed to create versions_extra directory");
+        std::fs::create_dir_all(&versions_extra_dir)
+            .expect("Failed to create versions_extra directory");
     }
     versions_extra_dir
 }
 
-pub fn get_asset_index_path(
-    assets_dir: &Path,
-    asset_index: &str,
-) -> PathBuf {
+pub fn get_asset_index_path(assets_dir: &Path, asset_index: &str) -> PathBuf {
     let asset_index_dir = assets_dir.join("indexes");
     if !asset_index_dir.exists() {
         std::fs::create_dir_all(&asset_index_dir).expect("Failed to create asset index directory");

@@ -1,8 +1,19 @@
-use std::{error::Error, path::{Path, PathBuf}};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
-use fs_extra::{file, dir};
+use fs_extra::{dir, file};
 use log::{error, info};
-use shared::{files::{self, get_files_in_dir}, paths::{get_minecraft_dir, get_versions_extra_dir}, progress, version::{extra_version_metadata::{save_extra_version_metadata, ExtraVersionMetadata, Object}, version_metadata::Download}};
+use shared::{
+    files::{self, get_files_in_dir},
+    paths::{get_minecraft_dir, get_versions_extra_dir},
+    progress,
+    version::{
+        extra_version_metadata::{save_extra_version_metadata, ExtraVersionMetadata, Object},
+        version_metadata::Download,
+    },
+};
 
 use crate::utils::get_url_from_path;
 
@@ -14,7 +25,9 @@ pub enum ExtraMetadataGeneratorError {
 
 fn sync_paths(from: &Path, to: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
     if !from.exists() {
-        return Err(Box::new(ExtraMetadataGeneratorError::PathDoesNotExist(from.to_string_lossy().to_string())));
+        return Err(Box::new(ExtraMetadataGeneratorError::PathDoesNotExist(
+            from.to_string_lossy().to_string(),
+        )));
     }
 
     if from.is_file() && to.is_dir() {
@@ -36,13 +49,20 @@ fn sync_paths(from: &Path, to: &Path) -> Result<(), Box<dyn Error + Send + Sync>
         options.overwrite = true;
         options.skip_exist = true;
 
+        if !to.exists() {
+            std::fs::create_dir(&to)?;
+        }
         dir::copy(from, to, &options)?;
     }
 
     Ok(())
 }
 
-async fn get_objects(path: &Path, data_dir: &Path, download_server_base: &str) -> Result<Vec<Object>, Box<dyn Error + Send + Sync>> {
+async fn get_objects(
+    path: &Path,
+    data_dir: &Path,
+    download_server_base: &str,
+) -> Result<Vec<Object>, Box<dyn Error + Send + Sync>> {
     let paths = if path.is_file() {
         vec![path.to_path_buf()]
     } else {
@@ -53,7 +73,7 @@ async fn get_objects(path: &Path, data_dir: &Path, download_server_base: &str) -
 
     let mut objects = vec![];
     for (path, hash) in paths.iter().zip(hashes.iter()) {
-        let url= get_url_from_path(path, data_dir, download_server_base)?;
+        let url = get_url_from_path(path, data_dir, download_server_base)?;
         objects.push(Object {
             path: path.to_string_lossy().to_string(),
             sha1: hash.clone(),
@@ -64,7 +84,11 @@ async fn get_objects(path: &Path, data_dir: &Path, download_server_base: &str) -
     Ok(objects)
 }
 
-async fn get_client_override(path: &Path, data_dir: &Path, download_server_base: &str) -> Result<Download, Box<dyn Error + Send + Sync>> {
+async fn get_client_override(
+    path: &Path,
+    data_dir: &Path,
+    download_server_base: &str,
+) -> Result<Download, Box<dyn Error + Send + Sync>> {
     Ok(Download {
         url: get_url_from_path(path, data_dir, download_server_base)?,
         sha1: files::hash_file(path).await.unwrap(),
@@ -82,7 +106,15 @@ pub struct ExtraMetadataGenerator {
 }
 
 impl ExtraMetadataGenerator {
-    pub fn new(version_name: String, include: Vec<String>, include_no_overwrite: Vec<String>, include_from: Option<String>, resources_url_base: Option<String>, download_server_base: String, client_override_path: Option<PathBuf>) -> Self {
+    pub fn new(
+        version_name: String,
+        include: Vec<String>,
+        include_no_overwrite: Vec<String>,
+        include_from: Option<String>,
+        resources_url_base: Option<String>,
+        download_server_base: String,
+        client_override_path: Option<PathBuf>,
+    ) -> Self {
         Self {
             version_name,
             include,
@@ -95,23 +127,34 @@ impl ExtraMetadataGenerator {
     }
 
     pub async fn generate(&self, output_dir: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
-        info!("Generating extra metadata for modpack {}", self.version_name);
+        info!(
+            "Generating extra metadata for modpack {}",
+            self.version_name
+        );
 
         if self.include_from.is_none() && self.resources_url_base.is_none() {
             return Ok(());
         }
 
         let client_override = if let Some(client_override_path) = &self.client_override_path {
-            Some(get_client_override(&client_override_path, output_dir, &self.download_server_base).await?)
+            Some(
+                get_client_override(
+                    &client_override_path,
+                    output_dir,
+                    &self.download_server_base,
+                )
+                .await?,
+            )
         } else {
             None
         };
 
-        let mut extra_metadata = ExtraVersionMetadata{
+        let mut extra_metadata = ExtraVersionMetadata {
+            version_name: self.version_name.clone(),
             include: self.include.clone(),
             include_no_overwrite: self.include_no_overwrite.clone(),
             objects: Vec::new(),
-            resources_url_base: None,
+            resources_url_base: self.resources_url_base.clone(),
             client_override,
         };
 
@@ -124,6 +167,12 @@ impl ExtraMetadataGenerator {
                 let from = copy_from.join(include);
                 let to = copy_to.join(include);
 
+                info!(
+                    "Copying {} from {} to {}",
+                    include,
+                    from.to_string_lossy(),
+                    to.to_string_lossy()
+                );
                 sync_paths(&from, &to)?;
 
                 objects.extend(get_objects(&to, output_dir, &self.download_server_base).await?);
@@ -133,7 +182,10 @@ impl ExtraMetadataGenerator {
         }
 
         let versions_extra_dir = get_versions_extra_dir(output_dir);
-        save_extra_version_metadata(&versions_extra_dir, &self.version_name, &extra_metadata).await?;
+        save_extra_version_metadata(&versions_extra_dir, &self.version_name, &extra_metadata)
+            .await?;
+
+        info!("Extra metadata for modpack {} generated", self.version_name);
 
         Ok(())
     }

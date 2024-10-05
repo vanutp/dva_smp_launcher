@@ -1,13 +1,15 @@
 use log::debug;
 use maplit::hashmap;
-use shared::paths::{get_client_jar_path, get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir};
+use shared::paths::{
+    get_client_jar_path, get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tokio::process::{Child, Command as TokioCommand};
 
 use crate::auth::elyby::ELY_BY_BASE;
-use crate::config::runtime_config::{get_assets_dir, get_launcher_dir, Config};
 use crate::config::build_config;
+use crate::config::runtime_config::{get_assets_dir, get_launcher_dir, Config};
 use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use crate::version::overrides::with_overrides;
 use crate::version::rules;
@@ -76,9 +78,9 @@ pub async fn launch(
     let base_version_metadata = &version_metadata.base;
 
     let launcher_dir = get_launcher_dir(config);
-    let mut minecraft_dir = get_minecraft_dir(&launcher_dir, &base_version_metadata.id);
-    let libraries_dir = get_libraries_dir(&launcher_dir, &base_version_metadata.id);
-    let natives_dir = get_natives_dir(&launcher_dir, &base_version_metadata.id);
+    let mut minecraft_dir = get_minecraft_dir(&launcher_dir, version_metadata.get_name());
+    let libraries_dir = get_libraries_dir(&launcher_dir, version_metadata.get_name());
+    let natives_dir = get_natives_dir(&launcher_dir, version_metadata.get_name());
 
     let minecraft_dir_short = minecraft_dir.clone();
     if cfg!(windows) {
@@ -93,7 +95,10 @@ pub async fn launch(
 
     let mut used_library_paths = HashSet::new();
     let mut classpath = vec![];
-    for library in with_overrides(base_version_metadata.get_libraries(), &base_version_metadata.hierarchy_ids) {
+    for library in with_overrides(
+        base_version_metadata.get_libraries(),
+        &base_version_metadata.hierarchy_ids,
+    ) {
         let path = library.get_path(&libraries_dir);
         if let Some(path) = path {
             if !path.exists() {
@@ -112,7 +117,7 @@ pub async fn launch(
     }
 
     classpath.push(
-            get_client_jar_path(&launcher_dir, &version_metadata.base.id)
+        get_client_jar_path(&launcher_dir, &version_metadata.base.id)
             .to_str()
             .unwrap()
             .to_string(),
@@ -191,8 +196,8 @@ pub async fn launch(
 
     let java_path = config
         .java_paths
-        .get(&base_version_metadata.id)
-        .ok_or_else(|| LaunchError::JavaPathNotFound(base_version_metadata.id.clone()))?;
+        .get(version_metadata.get_name())
+        .ok_or_else(|| LaunchError::JavaPathNotFound(version_metadata.get_name().to_string()))?;
 
     debug!(
         "Launching java {} with arguments {:?}",

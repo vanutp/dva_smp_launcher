@@ -7,9 +7,9 @@ mod constants;
 mod lang;
 mod launcher;
 mod message_provider;
-mod version;
 mod update_app;
 mod utils;
+mod version;
 
 use config::runtime_config;
 

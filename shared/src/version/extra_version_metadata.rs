@@ -15,6 +15,7 @@ pub struct Object {
 
 #[derive(Deserialize, Serialize)]
 pub struct ExtraVersionMetadata {
+    pub version_name: String,
     pub include: Vec<String>,
     pub include_no_overwrite: Vec<String>,
     pub objects: Vec<Object>,
@@ -77,7 +78,8 @@ pub async fn save_extra_version_metadata(
     version_name: &str,
     extra_version_metadata: &ExtraVersionMetadata,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let extra_version_metadata_path = get_extra_version_metadata_path(versions_extra_dir, version_name);
+    let extra_version_metadata_path =
+        get_extra_version_metadata_path(versions_extra_dir, version_name);
     let extra_version_metadata_file = serde_json::to_string(extra_version_metadata)?;
     tokio::fs::write(extra_version_metadata_path, extra_version_metadata_file).await?;
 

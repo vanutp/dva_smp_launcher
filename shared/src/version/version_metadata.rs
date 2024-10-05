@@ -107,7 +107,7 @@ pub struct Library {
     pub downloads: Option<LibraryDownloads>,
     pub rules: Option<Vec<Rule>>,
     pub url: Option<String>,
-    sha1: Option<String>,
+    pub sha1: Option<String>,
     pub natives: Option<HashMap<String, String>>,
     extract: Option<LibraryExtract>,
 }
@@ -137,8 +137,16 @@ impl Library {
         path.parent().unwrap_or(libraries_dir).to_path_buf()
     }
 
-    pub fn get_natives_path(&self, natives_name: &str, natives_download: &Download, libraries_dir: &Path) -> PathBuf {
-        let path = self.get_library_dir(libraries_dir).join(natives_name).join(natives_download.get_filename());
+    pub fn get_natives_path(
+        &self,
+        natives_name: &str,
+        natives_download: &Download,
+        libraries_dir: &Path,
+    ) -> PathBuf {
+        let path = self
+            .get_library_dir(libraries_dir)
+            .join(natives_name)
+            .join(natives_download.get_filename());
         path
     }
 
@@ -183,7 +191,11 @@ impl Library {
                     entries.push(CheckDownloadEntry {
                         url: download.url.clone(),
                         remote_sha1: Some(download.sha1.clone()),
-                        path: libraries_dir.join(self.get_natives_path(natives_name, download, libraries_dir)),
+                        path: libraries_dir.join(self.get_natives_path(
+                            natives_name,
+                            download,
+                            libraries_dir,
+                        )),
                     });
                 }
             }

@@ -1,9 +1,16 @@
-use std::{
-    error::Error,
-    path::Path,
-};
+use std::{error::Error, path::Path};
 
-use shared::{files::{self, CheckDownloadEntry}, progress, version::{version_manifest::VersionInfo, version_metadata::{get_version_metadata_path, read_version_metadata, Arguments, AssetIndex, Downloads, JavaVersion, Library, VersionMetadata}}};
+use shared::{
+    files::{self, CheckDownloadEntry},
+    progress,
+    version::{
+        version_manifest::VersionInfo,
+        version_metadata::{
+            get_version_metadata_path, read_version_metadata, Arguments, AssetIndex, Downloads,
+            JavaVersion, Library, VersionMetadata,
+        },
+    },
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum VersionMetadataError {

@@ -8,8 +8,8 @@ use std::fs;
 use zip::ZipArchive;
 
 use shared::files::{self, CheckDownloadEntry};
-use shared::version::extra_version_metadata::ExtraVersionMetadata;
 use shared::progress::{self, ProgressBar};
+use shared::version::extra_version_metadata::ExtraVersionMetadata;
 use shared::version::version_metadata;
 
 use crate::lang::LangMessage;
@@ -51,12 +51,16 @@ async fn get_objects_downloads(
     no_overwrite.retain(|x| !to_overwrite.contains(x));
 
     // delete extra to_overwrite files
-    let objects_hashset: HashSet<PathBuf> = objects.iter().map(|x| modpack_dir.join(&x.path)).collect();
-    let _ = to_overwrite.iter().map(|x| {
-        if !objects_hashset.contains(x) {
-            fs::remove_file(x).unwrap();
-        }
-    }).collect::<Vec<()>>();
+    let objects_hashset: HashSet<PathBuf> =
+        objects.iter().map(|x| modpack_dir.join(&x.path)).collect();
+    let _ = to_overwrite
+        .iter()
+        .map(|x| {
+            if !objects_hashset.contains(x) {
+                fs::remove_file(x).unwrap();
+            }
+        })
+        .collect::<Vec<()>>();
 
     let mut download_entries = vec![];
     for object in objects.iter() {
@@ -260,7 +264,10 @@ pub async fn sync_modpack(
 
     check_download_entries.push(get_client_download_entry(version_metadata, &launcher_dir)?);
 
-    let libraries = with_overrides(version_metadata.base.get_libraries(), &version_metadata.base.hierarchy_ids);
+    let libraries = with_overrides(
+        version_metadata.base.get_libraries(),
+        &version_metadata.base.hierarchy_ids,
+    );
     check_download_entries.extend(get_libraries_downloads(&libraries, &libraries_dir).await?);
 
     if let Some(extra) = &version_metadata.extra {
@@ -272,10 +279,8 @@ pub async fn sync_modpack(
     let asset_metadata = AssetsMetadata::read_or_fetch(asset_index, &assets_dir).await?;
 
     check_download_entries.extend(
-        asset_metadata.get_check_downloads(
-            &assets_dir,
-            version_metadata.get_resources_url_base(),
-        )?,
+        asset_metadata
+            .get_check_downloads(&assets_dir, version_metadata.get_resources_url_base())?,
     );
 
     progress_bar.set_message(LangMessage::CheckingFiles);
@@ -289,7 +294,9 @@ pub async fn sync_modpack(
     progress_bar.set_message(LangMessage::DownloadingFiles);
     files::download_files(download_entries, progress_bar).await?;
 
-    asset_metadata.save_to_file(&asset_index.id, &assets_dir).await?;
+    asset_metadata
+        .save_to_file(&asset_index.id, &assets_dir)
+        .await?;
 
     if libraries_changed {
         extract_natives(&libraries, &libraries_dir, &natives_dir)?;

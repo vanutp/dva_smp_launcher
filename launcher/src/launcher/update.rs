@@ -7,8 +7,8 @@ use std::{env, fs};
 
 use crate::config::build_config;
 use crate::lang::LangMessage;
-use shared::progress::ProgressBar;
 use crate::utils;
+use shared::progress::ProgressBar;
 
 #[cfg(target_os = "windows")]
 lazy_static::lazy_static! {

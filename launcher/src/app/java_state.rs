@@ -7,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
-use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use crate::utils;
+use crate::version::complete_version_metadata::CompleteVersionMetadata;
 
 use shared::java;
 use shared::progress::{ProgressBar, Unit};
@@ -108,22 +108,21 @@ impl JavaState {
         metadata: &CompleteVersionMetadata,
         config: &mut runtime_config::Config,
     ) {
-        if let Some(java_path) = config.java_paths.get(&metadata.base.id) {
+        if let Some(java_path) = config.java_paths.get(metadata.get_name()) {
             if !java::check_java(&metadata.get_java_version(), java_path.as_ref()) {
-                config.java_paths.remove(&metadata.base.id);
+                config.java_paths.remove(metadata.get_name());
                 runtime_config::save_config(config);
             }
         }
 
-        if config.java_paths.get(&metadata.base.id).is_none() {
+        if config.java_paths.get(metadata.get_name()).is_none() {
             let launcher_dir = runtime_config::get_launcher_dir(config);
 
-            if let Some(java_installation) = java::get_java(
-                &metadata.get_java_version(),
-                &get_java_dir(&launcher_dir),
-            ) {
+            if let Some(java_installation) =
+                java::get_java(&metadata.get_java_version(), &get_java_dir(&launcher_dir))
+            {
                 config.java_paths.insert(
-                    metadata.base.id.clone(),
+                    metadata.get_name().to_string(),
                     java_installation.path.to_str().unwrap().to_string(),
                 );
                 runtime_config::save_config(config);
@@ -140,10 +139,10 @@ impl JavaState {
     ) {
         if need_java_check {
             self.check_java(metadata, config);
-            if config.java_paths.get(&metadata.base.id).is_some() {
+            if config.java_paths.get(metadata.get_name()).is_some() {
                 self.status = JavaDownloadStatus::Downloaded;
             }
-            if config.java_paths.get(&metadata.base.id).is_none()
+            if config.java_paths.get(metadata.get_name()).is_none()
                 && self.status == JavaDownloadStatus::Downloaded
             {
                 self.status = JavaDownloadStatus::NotDownloaded;
@@ -176,9 +175,10 @@ impl JavaState {
                 if self.status == JavaDownloadStatus::Downloaded {
                     let path = result.java_installation.as_ref().unwrap().path.clone();
                     if java::check_java(&metadata.get_java_version(), &path) {
-                        config
-                            .java_paths
-                            .insert(metadata.base.id.clone(), path.to_str().unwrap().to_string());
+                        config.java_paths.insert(
+                            metadata.get_name().to_string(),
+                            path.to_str().unwrap().to_string(),
+                        );
                         runtime_config::save_config(config);
                     } else {
                         self.status = JavaDownloadStatus::DownloadError(
@@ -271,7 +271,10 @@ impl JavaState {
         {
             self.settings_opened = true;
 
-            self.picked_java_path = config.java_paths.get(&selected_metadata.base.id).cloned();
+            self.picked_java_path = config
+                .java_paths
+                .get(&selected_metadata.get_name().to_string())
+                .cloned();
             self.selected_xmx = Some(config.xmx.clone());
         }
 
@@ -303,7 +306,7 @@ impl JavaState {
                         if java::check_java(&selected_metadata.get_java_version(), &path) {
                             self.picked_java_path = Some(path.display().to_string());
                             config.java_paths.insert(
-                                selected_metadata.base.id.clone(),
+                                selected_metadata.get_name().to_string(),
                                 path.display().to_string(),
                             );
                             runtime_config::save_config(config);

@@ -5,9 +5,12 @@ use crate::{
     lang::LangMessage,
 };
 
-use shared::{paths::get_manifest_path, version::version_manifest::{
-    fetch_version_manifest, load_local_version_manifest_safe, VersionInfo, VersionManifest,
-}};
+use shared::{
+    paths::get_manifest_path,
+    version::version_manifest::{
+        fetch_version_manifest, load_local_version_manifest_safe, VersionInfo, VersionManifest,
+    },
+};
 
 use super::task::Task;
 
@@ -36,7 +39,8 @@ where
     let manifest_path = manifest_path.to_path_buf();
 
     runtime.spawn(async move {
-        let manifest = match fetch_version_manifest(&build_config::get_version_manifest_url()).await {
+        let manifest = match fetch_version_manifest(&build_config::get_version_manifest_url()).await
+        {
             Ok(manifest) => ManifestFetchResult {
                 status: FetchStatus::FetchedRemote,
                 manifest: manifest,

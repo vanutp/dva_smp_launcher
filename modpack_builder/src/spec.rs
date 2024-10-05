@@ -1,11 +1,21 @@
-use std::{error::Error, path::Path};
 use log::{error, warn};
-use shared::{paths::{get_client_jar_path, get_manifest_path}, version::version_manifest::{save_local_version_manifest, VersionManifest}};
+use shared::{
+    paths::{get_client_jar_path, get_manifest_path},
+    version::version_manifest::{save_local_version_manifest, VersionManifest},
+};
+use std::{error::Error, path::Path};
 use tokio::fs;
 
 use serde::Deserialize;
 
-use crate::{generate::{extra::ExtraMetadataGenerator, loaders::{generator::VersionGenerator, vanilla::VanillaGenerator}, manifest::get_version_info}, utils::exec_custom_command};
+use crate::{
+    generate::{
+        extra::ExtraMetadataGenerator,
+        loaders::{generator::VersionGenerator, vanilla::VanillaGenerator},
+        manifest::get_version_info,
+    },
+    utils::exec_custom_command,
+};
 
 fn vanilla() -> String {
     "vanilla".to_string()
@@ -52,14 +62,16 @@ impl VersionsSpec {
         Ok(spec)
     }
 
-    pub async fn generate(&self, output_dir: &Path, work_dir: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn generate(
+        &self,
+        output_dir: &Path,
+        work_dir: &Path,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         if let Some(command) = &self.exec_before_all {
             exec_custom_command(&command).await?;
         }
 
-        let mut version_manifest = VersionManifest{
-            versions: vec![],
-        };
+        let mut version_manifest = VersionManifest { versions: vec![] };
 
         for version in &self.versions {
             if let Some(command) = &version.exec_before {
@@ -109,7 +121,9 @@ impl VersionsSpec {
             );
             extra_generator.generate(output_dir).await?;
 
-            let version_info = get_version_info(output_dir, &id, &version.name, &self.download_server_base).await?;
+            let version_info =
+                get_version_info(output_dir, &id, &version.name, &self.download_server_base)
+                    .await?;
             version_manifest.versions.push(version_info);
 
             if let Some(command) = &version.exec_after {

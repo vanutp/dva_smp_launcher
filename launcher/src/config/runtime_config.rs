@@ -34,7 +34,9 @@ pub fn get_launcher_dir(config: &Config) -> PathBuf {
 
 fn get_config_path() -> PathBuf {
     let data_dir = dirs::data_dir().expect("Failed to get data directory");
-    data_dir.join(build_config::get_launcher_name()).join("config.json")
+    data_dir
+        .join(build_config::get_launcher_name())
+        .join("config.json")
 }
 
 pub fn get_assets_dir(config: &Config) -> PathBuf {

@@ -1,13 +1,18 @@
 use std::path::Path;
 
-use shared::{paths::{get_versions_dir, get_versions_extra_dir}, version::{
-    extra_version_metadata::{
-        get_extra_version_metadata, read_local_extra_version_metadata, ExtraVersionMetadata,
+use shared::{
+    paths::{get_versions_dir, get_versions_extra_dir},
+    version::{
+        extra_version_metadata::{
+            get_extra_version_metadata, read_local_extra_version_metadata, ExtraVersionMetadata,
+        },
+        version_manifest::VersionInfo,
     },
-    version_manifest::VersionInfo,
-}};
+};
 
-use super::merged_version_metadata::{get_merged_version_metadata, read_local_merged_version_metadata, MergedVersionMetadata};
+use super::merged_version_metadata::{
+    get_merged_version_metadata, read_local_merged_version_metadata, MergedVersionMetadata,
+};
 
 pub struct CompleteVersionMetadata {
     pub base: MergedVersionMetadata,
@@ -31,6 +36,13 @@ impl CompleteVersionMetadata {
 
     pub fn get_java_version(&self) -> String {
         return self.base.java_version.major_version.to_string();
+    }
+
+    pub fn get_name(&self) -> &str {
+        match &self.extra {
+            Some(extra) => &extra.version_name,
+            None => &self.base.id,
+        }
     }
 }
 

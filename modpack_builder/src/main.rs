@@ -1,12 +1,12 @@
-mod spec;
-mod utils;
 mod generate;
 mod progress;
+mod spec;
+mod utils;
 
-use std::{path::PathBuf, process::exit};
-use clap::{Command, Arg};
+use clap::{Arg, Command};
 use log::error;
 use spec::VersionsSpec;
+use std::{path::PathBuf, process::exit};
 use tokio::runtime::Runtime;
 
 fn parse_path(v: &str) -> Result<PathBuf, String> {
@@ -56,7 +56,8 @@ fn main() {
     let spec = rt.block_on(VersionsSpec::from_file(&spec_file_path));
     match spec {
         Ok(spec) => {
-            rt.block_on(spec.generate(&output_dir_path, &work_dir_path)).unwrap();
+            rt.block_on(spec.generate(&output_dir_path, &work_dir_path))
+                .unwrap();
         }
         Err(e) => {
             error!("Failed to read spec file: {}", e);

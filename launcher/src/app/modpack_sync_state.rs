@@ -1,16 +1,16 @@
-use std::sync::{mpsc, Arc};
 use shared::paths::get_manifest_path;
+use std::sync::{mpsc, Arc};
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
+use crate::utils;
 use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use crate::version::sync;
-use crate::utils;
 
-use shared::version::version_manifest::{self, VersionInfo, VersionManifest};
 use shared::progress::ProgressBar;
+use shared::version::version_manifest::{self, VersionInfo, VersionManifest};
 
 use super::progress_bar::GuiProgressBar;
 use super::task::Task;
@@ -117,7 +117,7 @@ impl ModpackSyncState {
         self.local_version_manifest
             .versions
             .iter()
-            .find(|i| i.id == selected_version.id)
+            .find(|i| i.get_name() == selected_version.get_name())
             .is_some()
     }
 
@@ -185,7 +185,7 @@ impl ModpackSyncState {
                 if self.status == ModpackSyncStatus::Synced {
                     self.local_version_manifest
                         .versions
-                        .retain(|i| i.id != selected_version_info.id);
+                        .retain(|i| i.get_name() != selected_version_info.get_name());
                     self.local_version_manifest
                         .versions
                         .push(selected_version_info.clone());

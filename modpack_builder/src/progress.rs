@@ -12,9 +12,7 @@ impl TerminalProgressBar {
                 .template("{msg} {bar:40.cyan/blue} {pos}/{len}")
                 .unwrap(),
         );
-        Self {
-            bar,
-        }
+        Self { bar }
     }
 }
 
@@ -37,6 +35,7 @@ impl ProgressBar<&str> for TerminalProgressBar {
 
     fn reset(&self) {
         self.bar.set_length(0);
+        self.bar.set_position(0);
     }
 
     fn set_unit(&self, _: Unit) {
