@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use log::info;
+use log::{debug, info};
 use shared::{
     files::{download_files, get_download_entries, CheckDownloadEntry},
     paths::{get_client_jar_path, get_libraries_dir},
@@ -18,6 +18,7 @@ pub fn get_libraries_check_downloads(
     for library in &version_metadata.libraries {
         entries.extend(library.get_all_check_download_entries(libraries_dir));
     }
+    debug!("Library check entries: {:?}", entries);
     entries
 }
 

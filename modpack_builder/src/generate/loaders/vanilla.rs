@@ -69,9 +69,9 @@ impl VersionGenerator for VanillaGenerator {
         &self,
         output_dir: &Path,
         _: &Path,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         info!(
-            "Generating vanilla version {}, minecraft version {}",
+            "Generating vanilla version \"{}\", minecraft version {}",
             self.version_name, self.minecraft_version
         );
 
@@ -97,12 +97,13 @@ impl VersionGenerator for VanillaGenerator {
                 output_dir,
             )
             .await?;
+
             let versions_dir = get_versions_dir(&output_dir);
             save_version_metadata(&versions_dir, &vanilla_metadata).await?;
         }
 
-        info!("Vanilla version {} generated", self.version_name);
+        info!("Vanilla version \"{}\" generated", self.version_name);
 
-        Ok(())
+        Ok(vanilla_metadata.id.clone())
     }
 }

@@ -49,10 +49,7 @@ fn sync_paths(from: &Path, to: &Path) -> Result<(), Box<dyn Error + Send + Sync>
         options.overwrite = true;
         options.skip_exist = true;
 
-        if !to.exists() {
-            std::fs::create_dir(&to)?;
-        }
-        dir::copy(from, to, &options)?;
+        dir::copy(from, to.parent().unwrap(), &options)?;
     }
 
     Ok(())
@@ -61,8 +58,11 @@ fn sync_paths(from: &Path, to: &Path) -> Result<(), Box<dyn Error + Send + Sync>
 async fn get_objects(
     path: &Path,
     data_dir: &Path,
+    version_name: &str,
     download_server_base: &str,
 ) -> Result<Vec<Object>, Box<dyn Error + Send + Sync>> {
+    let minecraft_dir = get_minecraft_dir(data_dir, version_name);
+
     let paths = if path.is_file() {
         vec![path.to_path_buf()]
     } else {
@@ -75,7 +75,7 @@ async fn get_objects(
     for (path, hash) in paths.iter().zip(hashes.iter()) {
         let url = get_url_from_path(path, data_dir, download_server_base)?;
         objects.push(Object {
-            path: path.to_string_lossy().to_string(),
+            path: path.strip_prefix(&minecraft_dir)?.to_string_lossy().to_string(),
             sha1: hash.clone(),
             url,
         });
@@ -175,7 +175,7 @@ impl ExtraMetadataGenerator {
                 );
                 sync_paths(&from, &to)?;
 
-                objects.extend(get_objects(&to, output_dir, &self.download_server_base).await?);
+                objects.extend(get_objects(&to, output_dir, &self.version_name, &self.download_server_base).await?);
             }
 
             extra_metadata.objects = objects;

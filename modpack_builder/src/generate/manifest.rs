@@ -28,7 +28,7 @@ pub async fn get_version_info(
         let version_metadata = read_version_metadata(&versions_dir, &id).await?;
         if let Some(new_id) = version_metadata.inherits_from {
             id = new_id;
-            let version_path = get_version_metadata_path(&versions_dir, version_id);
+            let version_path = get_version_metadata_path(&versions_dir, &id);
             inherits_from.push(MetadataInfo {
                 id: id.clone(),
                 url: get_url_from_path(&version_path, output_dir, download_server_base)?,

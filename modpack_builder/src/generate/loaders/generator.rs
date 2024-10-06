@@ -8,5 +8,5 @@ pub trait VersionGenerator {
         &self,
         output_dir: &Path,
         work_dir: &Path,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 }

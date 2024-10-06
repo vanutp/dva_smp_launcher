@@ -33,7 +33,7 @@ fn main() {
         .arg(
             Arg::new("output_dir")
                 .help("Output directory")
-                .default_value("./modpacks"),
+                .default_value("./generated"),
         )
         .arg(
             Arg::new("work_dir")

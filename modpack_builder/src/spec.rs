@@ -11,7 +11,9 @@ use serde::Deserialize;
 use crate::{
     generate::{
         extra::ExtraMetadataGenerator,
-        loaders::{generator::VersionGenerator, vanilla::VanillaGenerator},
+        loaders::{
+            fabric::FabricGenerator, generator::VersionGenerator, vanilla::VanillaGenerator,
+        },
         manifest::get_version_info,
     },
     utils::exec_custom_command,
@@ -80,7 +82,6 @@ impl VersionsSpec {
 
             let generator: Box<dyn VersionGenerator>;
             let need_client_overwrite;
-            let id;
             match version.loader_name.as_str() {
                 "vanilla" => {
                     if version.loader_version.is_some() {
@@ -95,7 +96,18 @@ impl VersionsSpec {
                     ));
 
                     need_client_overwrite = false;
-                    id = version.minecraft_version.clone();
+                }
+
+                "fabric" => {
+                    generator = Box::new(FabricGenerator::new(
+                        version.name.clone(),
+                        version.minecraft_version.clone(),
+                        version.loader_version.clone(),
+                        self.download_server_base.clone(),
+                        version.replace_download_urls,
+                    ));
+
+                    need_client_overwrite = false;
                 }
 
                 _ => {
@@ -103,7 +115,7 @@ impl VersionsSpec {
                     continue;
                 }
             }
-            generator.generate(output_dir, work_dir).await?;
+            let id = generator.generate(output_dir, work_dir).await?;
             let client_override_path = if need_client_overwrite {
                 Some(get_client_jar_path(output_dir, &id))
             } else {
