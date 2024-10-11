@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use log::{debug, info};
 use shared::paths::{get_client_jar_path, get_libraries_dir, get_minecraft_dir, get_natives_dir};
 use shared::version::asset_metadata::AssetsMetadata;
 use std::fs;
@@ -89,6 +90,10 @@ async fn get_libraries_downloads(
     for library in libraries {
         for entry in rules::get_check_download_entries(library, libraries_dir) {
             if entry.remote_sha1.is_some() || !entry.path.exists() {
+                if entry.url == "" {
+                    info!("Skipping library with no URL: {:?}", entry.path);
+                    continue;
+                }
                 check_download_entries.push(entry);
             } else {
                 match library.get_sha1_url() {
@@ -205,31 +210,14 @@ fn get_client_download_entry(
     version_metadata: &CompleteVersionMetadata,
     launcher_dir: &Path,
 ) -> Result<CheckDownloadEntry, Box<dyn std::error::Error + Send + Sync>> {
-    let is_overridden;
-    if let Some(extra) = &version_metadata.extra {
-        is_overridden = extra.client_override.is_some();
-    } else {
-        is_overridden = false;
-    }
-
-    let client_download = if is_overridden {
-        version_metadata
-            .extra
-            .as_ref()
-            .unwrap()
-            .client_override
-            .as_ref()
-            .unwrap()
-    } else {
-        version_metadata
-            .base
-            .downloads
-            .as_ref()
-            .ok_or(VersionMetadataError::MissingClientDownload)?
-            .client
-            .as_ref()
-            .ok_or(VersionMetadataError::MissingClientDownload)?
-    };
+    let client_download = version_metadata
+        .base
+        .downloads
+        .as_ref()
+        .ok_or(VersionMetadataError::MissingClientDownload)?
+        .client
+        .as_ref()
+        .ok_or(VersionMetadataError::MissingClientDownload)?;
 
     Ok(CheckDownloadEntry {
         url: client_download.url.clone(),
@@ -268,7 +256,10 @@ pub async fn sync_modpack(
         version_metadata.base.get_libraries(),
         &version_metadata.base.hierarchy_ids,
     );
-    check_download_entries.extend(get_libraries_downloads(&libraries, &libraries_dir).await?);
+    let mut libraries_with_forge = libraries.clone();
+    libraries_with_forge.extend(version_metadata.get_extra_forge_libs().into_iter().cloned());
+
+    check_download_entries.extend(get_libraries_downloads(&libraries_with_forge, &libraries_dir).await?);
 
     if let Some(extra) = &version_metadata.extra {
         check_download_entries
@@ -290,6 +281,12 @@ pub async fn sync_modpack(
     let libraries_changed = download_entries
         .iter()
         .any(|entry| entry.path.starts_with(&libraries_dir));
+
+    let paths = download_entries
+        .iter()
+        .map(|x| x.path.clone())
+        .collect::<Vec<_>>();
+    debug!("Paths to download: {:?}", paths);
 
     progress_bar.set_message(LangMessage::DownloadingFiles);
     files::download_files(download_entries, progress_bar).await?;

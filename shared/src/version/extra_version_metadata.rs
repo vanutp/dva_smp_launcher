@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::files;
 
-use super::{version_manifest::VersionInfo, version_metadata::Download};
+use super::{version_manifest::VersionInfo, version_metadata::Library};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Object {
     pub path: String,
     pub sha1: String,
@@ -16,11 +16,21 @@ pub struct Object {
 #[derive(Deserialize, Serialize)]
 pub struct ExtraVersionMetadata {
     pub version_name: String,
+
+    #[serde(default)]
     pub include: Vec<String>,
+
+    #[serde(default)]
     pub include_no_overwrite: Vec<String>,
+
+    #[serde(default)]
     pub objects: Vec<Object>,
+
+    #[serde(default)]
     pub resources_url_base: Option<String>,
-    pub client_override: Option<Download>,
+
+    #[serde(default)]
+    pub extra_forge_libs: Vec<Library>,
 }
 
 pub fn get_extra_version_metadata_path(versions_extra_dir: &Path, version_name: &str) -> PathBuf {

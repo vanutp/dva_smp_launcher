@@ -1,12 +1,12 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use shared::{
-    paths::{get_versions_dir, get_versions_extra_dir},
+    paths::{get_client_jar_path, get_versions_dir, get_versions_extra_dir},
     version::{
         extra_version_metadata::{
             get_extra_version_metadata, read_local_extra_version_metadata, ExtraVersionMetadata,
         },
-        version_manifest::VersionInfo,
+        version_manifest::VersionInfo, version_metadata::Library,
     },
 };
 
@@ -42,6 +42,29 @@ impl CompleteVersionMetadata {
         match &self.extra {
             Some(extra) => &extra.version_name,
             None => &self.base.id,
+        }
+    }
+
+    pub fn get_client_jar_path(&self, launcher_dir: &Path) -> Option<PathBuf> {
+        let client_path = get_client_jar_path(launcher_dir, &self.base.id);
+        if client_path.exists() {
+            return Some(client_path);
+        }
+
+        for id in &self.base.hierarchy_ids {
+            let client_path = get_client_jar_path(launcher_dir, id);
+            if client_path.exists() {
+                return Some(client_path);
+            }
+        }
+
+        None
+    }
+    
+    pub fn get_extra_forge_libs(&self) -> Vec<&Library> {
+        match &self.extra {
+            Some(extra) => extra.extra_forge_libs.iter().collect(),
+            None => Vec::new(),
         }
     }
 }

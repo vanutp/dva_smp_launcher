@@ -30,6 +30,10 @@ pub async fn replace_download_urls(
         if let Some(library_path) = library.get_path(&get_libraries_dir(data_dir, version_name)) {
             if let Some(downloads) = &mut library.downloads {
                 if let Some(artifact) = &mut downloads.artifact {
+                    if artifact.url == "" {
+                        // special case for forge's client.jar
+                        continue;
+                    }
                     artifact.url =
                         get_url_from_path(&library_path, data_dir, download_server_base)?;
                 }

@@ -14,8 +14,8 @@ use shared::{
 
 #[derive(thiserror::Error, Debug)]
 pub enum VersionMetadataError {
-    #[error("Bad arguments")]
-    BadArgumentsError,
+    #[error("Bad version metadata")]
+    BadMetadata,
 }
 
 pub struct MergedVersionMetadata {
@@ -37,11 +37,11 @@ impl MergedVersionMetadata {
             arguments: version_metadata.get_arguments()?,
             asset_index: version_metadata
                 .asset_index
-                .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
+                .ok_or(Box::new(VersionMetadataError::BadMetadata))?,
             id: version_metadata.id.clone(),
             java_version: version_metadata
                 .java_version
-                .ok_or(Box::new(VersionMetadataError::BadArgumentsError))?,
+                .ok_or(Box::new(VersionMetadataError::BadMetadata))?,
             libraries: version_metadata.libraries,
             main_class: version_metadata.main_class,
             downloads: version_metadata.downloads,
@@ -55,20 +55,32 @@ impl MergedVersionMetadata {
 }
 
 fn merge_two_metadata(
-    child_metadata: &mut MergedVersionMetadata,
-    parent_metadata: VersionMetadata,
+    parent_metadata: &mut MergedVersionMetadata,
+    child_metadata: VersionMetadata,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(arguments) = parent_metadata.arguments {
-        child_metadata.arguments.game.extend(arguments.game);
-        child_metadata.arguments.jvm.extend(arguments.jvm);
-    }
-    child_metadata.libraries.extend(parent_metadata.libraries);
-
-    if child_metadata.downloads.is_none() && parent_metadata.downloads.is_some() {
-        child_metadata.downloads = parent_metadata.downloads;
+    if let Some(arguments) = child_metadata.arguments {
+        parent_metadata.arguments.game.extend(arguments.game);
+        parent_metadata.arguments.jvm.extend(arguments.jvm);
+    } else if child_metadata.minecraft_arguments.is_some() {
+        let arguments = child_metadata.get_arguments()?;
+        parent_metadata.arguments.game = arguments.game;
     }
 
-    child_metadata.hierarchy_ids.push(parent_metadata.id);
+    let parent_id = parent_metadata.id.clone();
+    parent_metadata.hierarchy_ids.push(parent_id);
+    parent_metadata.id = child_metadata.id.clone();
+
+    if let Some(java_version) = child_metadata.java_version {
+        parent_metadata.java_version = java_version;
+    }
+
+    parent_metadata.libraries.extend(child_metadata.libraries);
+
+    parent_metadata.main_class = child_metadata.main_class;
+
+    if parent_metadata.downloads.is_none() && child_metadata.downloads.is_some() {
+        parent_metadata.downloads = child_metadata.downloads;
+    }
 
     Ok(())
 }
@@ -77,13 +89,23 @@ pub async fn read_local_merged_version_metadata(
     version_id: &str,
     versions_dir: &Path,
 ) -> Result<MergedVersionMetadata, Box<dyn Error + Send + Sync>> {
-    let mut metadata = read_version_metadata(versions_dir, version_id).await?;
-    let mut inherits_from = metadata.inherits_from.clone();
-    let mut merged_metadata = MergedVersionMetadata::from_version_metadata(metadata)?;
-    while let Some(parent_id) = &inherits_from {
-        metadata = read_version_metadata(versions_dir, parent_id).await?;
-        inherits_from = metadata.inherits_from.clone();
-        merge_two_metadata(&mut merged_metadata, metadata)?;
+    let mut metadata = vec![];
+    let mut version_id = version_id.to_string();
+    loop {
+        let current_metadata = read_version_metadata(versions_dir, &version_id).await?;
+        let parent_id = current_metadata.inherits_from.clone();
+        metadata.push(current_metadata);
+        if let Some(id) = parent_id {
+            version_id = id;
+        } else {
+            break;
+        }
+    }
+
+    let mut merged_metadata =
+        MergedVersionMetadata::from_version_metadata(metadata.pop().unwrap())?;
+    while let Some(current_metadata) = metadata.pop() {
+        merge_two_metadata(&mut merged_metadata, current_metadata)?;
     }
 
     Ok(merged_metadata)

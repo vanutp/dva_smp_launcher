@@ -65,6 +65,7 @@ pub async fn download_file(
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct DownloadEntry {
     pub url: String,
     pub path: PathBuf,
@@ -124,6 +125,7 @@ pub async fn fetch_files<M>(
     run_tasks_with_progress(futures, progress_bar, total_size, max_concurrent_downloads).await
 }
 
+#[derive(Debug)]
 pub struct CheckDownloadEntry {
     pub url: String,
     pub remote_sha1: Option<String>,

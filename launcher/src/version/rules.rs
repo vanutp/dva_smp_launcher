@@ -134,3 +134,11 @@ pub fn get_check_download_entries(
 
     library.get_specific_check_download_entries(natives_name, libraries_dir)
 }
+
+pub fn library_matches_os(library: &Library) -> bool {
+    if let Some(rules) = &library.rules {
+        rules_apply(rules)
+    } else {
+        true
+    }
+}

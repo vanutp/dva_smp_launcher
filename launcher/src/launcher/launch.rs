@@ -1,8 +1,6 @@
 use log::debug;
 use maplit::hashmap;
-use shared::paths::{
-    get_client_jar_path, get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir,
-};
+use shared::paths::{get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tokio::process::{Child, Command as TokioCommand};
@@ -66,6 +64,8 @@ pub enum LaunchError {
     MissingLibrary(PathBuf),
     #[error("Invalid path {0}")]
     InvalidPath(PathBuf),
+    #[error("No client jar found")]
+    NoClientJar,
     #[error("Java path for version {0} not found")]
     JavaPathNotFound(String),
 }
@@ -99,9 +99,13 @@ pub async fn launch(
         base_version_metadata.get_libraries(),
         &base_version_metadata.hierarchy_ids,
     ) {
+        if !rules::library_matches_os(&library) {
+            continue;
+        }
+
         let path = library.get_path(&libraries_dir);
         if let Some(path) = path {
-            if !path.exists() {
+            if !path.is_file() {
                 return Err(Box::new(LaunchError::MissingLibrary(path.clone())));
             }
             let path_str = path
@@ -117,7 +121,9 @@ pub async fn launch(
     }
 
     classpath.push(
-        get_client_jar_path(&launcher_dir, &version_metadata.base.id)
+        version_metadata
+            .get_client_jar_path(&launcher_dir)
+            .ok_or_else(|| LaunchError::NoClientJar)?
             .to_str()
             .unwrap()
             .to_string(),

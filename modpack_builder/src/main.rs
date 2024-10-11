@@ -4,9 +4,8 @@ mod spec;
 mod utils;
 
 use clap::{Arg, Command};
-use log::error;
 use spec::VersionsSpec;
-use std::{path::PathBuf, process::exit};
+use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 fn parse_path(v: &str) -> Result<PathBuf, String> {
@@ -18,7 +17,7 @@ fn parse_path(v: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     env_logger::init();
 
     let matches = Command::new("generate-modpack")
@@ -53,15 +52,6 @@ fn main() {
     let work_dir_path = work_dir.clone();
 
     let rt = Runtime::new().unwrap();
-    let spec = rt.block_on(VersionsSpec::from_file(&spec_file_path));
-    match spec {
-        Ok(spec) => {
-            rt.block_on(spec.generate(&output_dir_path, &work_dir_path))
-                .unwrap();
-        }
-        Err(e) => {
-            error!("Failed to read spec file: {}", e);
-            exit(1);
-        }
-    }
+    let spec = rt.block_on(VersionsSpec::from_file(&spec_file_path))?;
+    rt.block_on(spec.generate(&output_dir_path, &work_dir_path))
 }

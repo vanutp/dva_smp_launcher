@@ -13,7 +13,7 @@ use crate::generate::{
     loaders::vanilla::VanillaGenerator, patch::replace_download_urls, sync::sync_version,
 };
 
-use super::generator::VersionGenerator;
+use super::generator::{GeneratorResult, VersionGenerator};
 
 const FABRIC_META_BASE_URL: &str = "https://meta.fabricmc.net/v2/versions/loader/";
 
@@ -88,9 +88,9 @@ impl VersionGenerator for FabricGenerator {
         &self,
         output_dir: &Path,
         _: &Path,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    ) -> Result<GeneratorResult, Box<dyn Error + Send + Sync>> {
         info!(
-            "Generating fabric version \"{}\", minecraft version {}",
+            "Generating fabric modpack \"{}\", minecraft version {}",
             self.version_name, self.minecraft_version
         );
 
@@ -133,13 +133,13 @@ impl VersionGenerator for FabricGenerator {
 
             let versions_dir = get_versions_dir(&output_dir);
             save_version_metadata(&versions_dir, &fabric_metadata).await?;
-
-            // fabric doesn't change the client jar
-            // so we don't need to do anything
         }
 
         info!("Fabric version \"{}\" generated", self.version_name);
 
-        Ok(fabric_metadata.id.clone())
+        Ok(GeneratorResult{
+            id: fabric_metadata.id.clone(),
+            extra_libs_paths: vec![],
+        })
     }
 }

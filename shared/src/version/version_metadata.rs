@@ -9,6 +9,8 @@ use tokio::{fs, io::AsyncReadExt as _};
 
 use crate::files::CheckDownloadEntry;
 
+use super::version_manifest::VersionInfo;
+
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Os {
     pub name: Option<String>,
@@ -113,6 +115,25 @@ pub struct Library {
 }
 
 impl Library {
+    pub fn from_download(
+        name: String,
+        url: String,
+        sha1: String,
+    ) -> Self {
+        Library {
+            name,
+            downloads: Some(LibraryDownloads {
+                artifact: Some(Download { url, sha1 }),
+                classifiers: None,
+            }),
+            rules: None,
+            url: None,
+            sha1: None,
+            natives: None,
+            extract: None,
+        }
+    }
+
     pub fn get_path_from_name(&self) -> String {
         let full_name = self.name.clone();
         let mut parts: Vec<&str> = full_name.split(':').collect();
@@ -166,7 +187,7 @@ impl Library {
     fn get_check_download_entry(&self, libraries_dir: &Path) -> Option<CheckDownloadEntry> {
         if let Some(url) = &self.url {
             return Some(CheckDownloadEntry {
-                url: url.clone(),
+                url: format!("{}/{}", url, self.get_path_from_name()),
                 remote_sha1: self.sha1.clone(),
                 path: libraries_dir.join(&self.get_path_from_name()),
             });
@@ -320,6 +341,13 @@ lazy_static::lazy_static! {
 }
 
 impl VersionMetadata {
+    pub async fn from_url(url: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let client = reqwest::Client::new();
+        let response = client.get(url).send().await?.error_for_status()?;
+        let metadata = response.json().await?;
+        Ok(metadata)
+    }
+
     pub fn get_arguments(&self) -> Result<Arguments, Box<dyn Error + Send + Sync>> {
         match &self.arguments {
             Some(arguments) => Ok(arguments.clone()),
@@ -338,9 +366,11 @@ impl VersionMetadata {
 }
 
 pub fn get_version_metadata_path(versions_dir: &Path, version_id: &str) -> PathBuf {
-    versions_dir
-        .join(version_id)
-        .join(format!("{}.json", version_id))
+    let version_dir = versions_dir.join(version_id);
+    if !version_dir.exists() {
+        std::fs::create_dir_all(&version_dir).expect("Failed to create version directory");
+    }
+    version_dir.join(format!("{}.json", version_id))
 }
 
 pub async fn read_version_metadata(
@@ -363,4 +393,17 @@ pub async fn save_version_metadata(
     let content = serde_json::to_string(metadata)?;
     fs::write(version_path, content).await?;
     Ok(())
+}
+
+pub async fn fetch_version_metadata(
+    version_info: &VersionInfo,
+) -> Result<VersionMetadata, Box<dyn Error + Send + Sync>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&version_info.url)
+        .send()
+        .await?
+        .error_for_status()?;
+    let metadata: VersionMetadata = response.json().await?;
+    Ok(metadata)
 }

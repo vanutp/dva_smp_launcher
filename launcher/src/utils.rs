@@ -1,3 +1,4 @@
+use log::info;
 use serde::Deserialize;
 
 use crate::config::build_config;
@@ -8,7 +9,7 @@ use std::path::PathBuf;
 
 pub fn set_sigint_handler() {
     ctrlc::set_handler(move || {
-        println!("Exiting...");
+        info!("Exiting...");
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");

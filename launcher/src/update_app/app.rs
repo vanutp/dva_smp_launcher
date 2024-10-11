@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use eframe::egui;
 use eframe::run_native;
+use log::info;
 use tokio::runtime::Runtime;
 
 use crate::app::progress_bar::GuiProgressBar;
@@ -47,12 +48,12 @@ pub struct UpdateApp {
 
 pub fn run_gui(config: &runtime_config::Config) {
     if std::env::var("CARGO").is_ok() {
-        println!("Running from cargo, skipping auto-update");
+        info!("Running from cargo, skipping auto-update");
         return;
     }
 
     if build_config::get_version().is_none() {
-        println!("Version not set, skipping auto-update");
+        info!("Version not set, skipping auto-update");
         return;
     }
 

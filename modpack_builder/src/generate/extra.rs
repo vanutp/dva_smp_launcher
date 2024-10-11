@@ -1,21 +1,21 @@
 use std::{
     error::Error,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, sync::Arc,
 };
 
 use fs_extra::{dir, file};
 use log::{error, info};
 use shared::{
-    files::{self, get_files_in_dir},
-    paths::{get_minecraft_dir, get_versions_extra_dir},
-    progress,
+    files::{self, get_files_in_dir, hash_files},
+    paths::{get_libraries_dir, get_minecraft_dir, get_versions_extra_dir},
+    progress::{self, ProgressBar as _},
     version::{
         extra_version_metadata::{save_extra_version_metadata, ExtraVersionMetadata, Object},
-        version_metadata::Download,
+        version_metadata::Library,
     },
 };
 
-use crate::utils::get_url_from_path;
+use crate::{progress::TerminalProgressBar, utils::get_url_from_path};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ExtraMetadataGeneratorError {
@@ -75,7 +75,10 @@ async fn get_objects(
     for (path, hash) in paths.iter().zip(hashes.iter()) {
         let url = get_url_from_path(path, data_dir, download_server_base)?;
         objects.push(Object {
-            path: path.strip_prefix(&minecraft_dir)?.to_string_lossy().to_string(),
+            path: path
+                .strip_prefix(&minecraft_dir)?
+                .to_string_lossy()
+                .to_string(),
             sha1: hash.clone(),
             url,
         });
@@ -84,15 +87,48 @@ async fn get_objects(
     Ok(objects)
 }
 
-async fn get_client_override(
-    path: &Path,
+#[derive(thiserror::Error, Debug)]
+pub enum ExtraForgeLibsError {
+    #[error("Bad library name: {0}")]
+    BadLibraryName(String),
+}
+
+async fn get_extra_forge_libs(
+    extra_forge_libs_paths: &Vec<PathBuf>,
     data_dir: &Path,
+    version_name: &str,
     download_server_base: &str,
-) -> Result<Download, Box<dyn Error + Send + Sync>> {
-    Ok(Download {
-        url: get_url_from_path(path, data_dir, download_server_base)?,
-        sha1: files::hash_file(path).await.unwrap(),
-    })
+) -> Result<Vec<Library>, Box<dyn Error + Send + Sync>> {
+    let libraries_dir = get_libraries_dir(data_dir, version_name);
+
+    let progress_bar = Arc::new(TerminalProgressBar::new());
+    progress_bar.set_message("Hashing extra forge libraries");
+    let hashes = hash_files(extra_forge_libs_paths.to_vec(), progress_bar).await?;
+
+    let libraries = extra_forge_libs_paths
+        .iter()
+        .zip(hashes.iter())
+        .filter(|(path, _)| path.is_file() && path.extension().map_or(false, |ext| ext == "jar"))
+        .map(|(path, hash)| {
+            let url = get_url_from_path(path, data_dir, download_server_base)?;
+
+            let parts = path.strip_prefix(&libraries_dir)?.components().map(|x| x.as_os_str().to_string_lossy()).collect::<Vec<_>>();
+            let version = parts[parts.len() - 2].to_string();
+            let name = parts[parts.len() - 3].to_string();
+            let group = parts.iter().take(parts.len() - 3).map(|s| s.to_string()).collect::<Vec<_>>().join(".");
+
+            let filename = path.file_name().unwrap().to_string_lossy().strip_suffix(".jar").unwrap().to_string();
+            let filename_without_suffix = format!("{}-{}", name, version);
+            let suffix = filename.strip_prefix(&filename_without_suffix).ok_or(ExtraForgeLibsError::BadLibraryName(filename.clone()))?;
+            let suffix = suffix.replace("-", ":");
+
+            let name = format!("{}:{}:{}{}", group, name, version, suffix);
+
+            Ok(Library::from_download(name, url, hash.clone()))
+        })
+        .collect::<Result<_, Box<dyn Error + Send + Sync>>>()?;
+
+    Ok(libraries)
 }
 
 pub struct ExtraMetadataGenerator {
@@ -102,7 +138,7 @@ pub struct ExtraMetadataGenerator {
     include_from: Option<String>,
     resources_url_base: Option<String>,
     download_server_base: String,
-    client_override_path: Option<PathBuf>,
+    extra_forge_libs_paths: Vec<PathBuf>,
 }
 
 impl ExtraMetadataGenerator {
@@ -113,7 +149,7 @@ impl ExtraMetadataGenerator {
         include_from: Option<String>,
         resources_url_base: Option<String>,
         download_server_base: String,
-        client_override_path: Option<PathBuf>,
+        extra_forge_libs_paths: Vec<PathBuf>,
     ) -> Self {
         Self {
             version_name,
@@ -122,7 +158,7 @@ impl ExtraMetadataGenerator {
             include_from,
             resources_url_base,
             download_server_base,
-            client_override_path,
+            extra_forge_libs_paths,
         }
     }
 
@@ -136,18 +172,12 @@ impl ExtraMetadataGenerator {
             return Ok(());
         }
 
-        let client_override = if let Some(client_override_path) = &self.client_override_path {
-            Some(
-                get_client_override(
-                    &client_override_path,
-                    output_dir,
-                    &self.download_server_base,
-                )
-                .await?,
-            )
-        } else {
-            None
-        };
+        let extra_forge_libs = get_extra_forge_libs(
+            &self.extra_forge_libs_paths,
+            output_dir,
+            &self.version_name,
+            &self.download_server_base,
+        ).await?;
 
         let mut extra_metadata = ExtraVersionMetadata {
             version_name: self.version_name.clone(),
@@ -155,7 +185,7 @@ impl ExtraMetadataGenerator {
             include_no_overwrite: self.include_no_overwrite.clone(),
             objects: Vec::new(),
             resources_url_base: self.resources_url_base.clone(),
-            client_override,
+            extra_forge_libs,
         };
 
         if let Some(include_from) = &self.include_from {
@@ -175,7 +205,15 @@ impl ExtraMetadataGenerator {
                 );
                 sync_paths(&from, &to)?;
 
-                objects.extend(get_objects(&to, output_dir, &self.version_name, &self.download_server_base).await?);
+                objects.extend(
+                    get_objects(
+                        &to,
+                        output_dir,
+                        &self.version_name,
+                        &self.download_server_base,
+                    )
+                    .await?,
+                );
             }
 
             extra_metadata.objects = objects;

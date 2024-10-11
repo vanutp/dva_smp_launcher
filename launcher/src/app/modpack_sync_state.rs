@@ -117,7 +117,7 @@ impl ModpackSyncState {
         self.local_version_manifest
             .versions
             .iter()
-            .find(|i| i.get_name() == selected_version.get_name())
+            .find(|i| i == &selected_version)
             .is_some()
     }
 

@@ -2,22 +2,20 @@ use std::{error::Error, path::Path};
 
 use async_trait::async_trait;
 use log::info;
-use reqwest::Client;
 use shared::{
-    files::download_file,
     paths::get_versions_dir,
     version::{
-        version_manifest::{fetch_version_manifest, VersionInfo},
-        version_metadata::{
-            get_version_metadata_path, read_version_metadata, save_version_metadata,
-            VersionMetadata,
-        },
+        version_manifest::VersionInfo,
+        version_metadata::{fetch_version_metadata, save_version_metadata, VersionMetadata},
     },
 };
 
-use crate::generate::{patch::replace_download_urls, sync::sync_version};
+use crate::{
+    generate::{patch::replace_download_urls, sync::sync_version},
+    utils::get_vanilla_version_info,
+};
 
-use super::generator::VersionGenerator;
+use super::generator::{GeneratorResult, VersionGenerator};
 
 pub struct VanillaGenerator {
     version_name: String,
@@ -42,26 +40,15 @@ impl VanillaGenerator {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum VanillaGeneratorError {
-    #[error("Vanilla version not found")]
-    VersionNotFound,
-}
-
 pub async fn download_vanilla_metadata(
     version_info: &VersionInfo,
     output_dir: &Path,
 ) -> Result<VersionMetadata, Box<dyn Error + Send + Sync>> {
+    let version_metadata = fetch_version_metadata(version_info).await?;
     let versions_dir = get_versions_dir(&output_dir);
-    let version_metadata_path = get_version_metadata_path(&versions_dir, &version_info.id);
-
-    let client = Client::new();
-    download_file(&client, &version_info.url, &version_metadata_path).await?;
-    return Ok(read_version_metadata(&versions_dir, &version_info.id).await?);
+    save_version_metadata(&versions_dir, &version_metadata).await?;
+    return Ok(version_metadata);
 }
-
-const VANILLA_MANIFEST_URL: &str =
-    "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
 #[async_trait]
 impl VersionGenerator for VanillaGenerator {
@@ -69,22 +56,17 @@ impl VersionGenerator for VanillaGenerator {
         &self,
         output_dir: &Path,
         _: &Path,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    ) -> Result<GeneratorResult, Box<dyn Error + Send + Sync>> {
         info!(
             "Generating vanilla version \"{}\", minecraft version {}",
             self.version_name, self.minecraft_version
         );
 
         info!("Fetching version manifest");
-        let vanilla_manifest = fetch_version_manifest(VANILLA_MANIFEST_URL).await?;
-        let version_info = vanilla_manifest
-            .versions
-            .iter()
-            .find(|v| v.id == self.minecraft_version)
-            .ok_or_else(|| VanillaGeneratorError::VersionNotFound)?;
+        let version_info = get_vanilla_version_info(&self.minecraft_version).await?;
 
         info!("Downloading version metadata");
-        let mut vanilla_metadata = download_vanilla_metadata(version_info, output_dir).await?;
+        let mut vanilla_metadata = download_vanilla_metadata(&version_info, output_dir).await?;
 
         if self.replace_download_urls {
             info!("Syncing version");
@@ -104,6 +86,9 @@ impl VersionGenerator for VanillaGenerator {
 
         info!("Vanilla version \"{}\" generated", self.version_name);
 
-        Ok(vanilla_metadata.id.clone())
+        Ok(GeneratorResult{
+            id: vanilla_metadata.id.clone(),
+            extra_libs_paths: vec![],
+        })
     }
 }
