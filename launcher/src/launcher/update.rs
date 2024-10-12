@@ -50,9 +50,9 @@ pub enum UpdateError {
 }
 
 async fn fetch_new_version() -> Result<String, Box<dyn Error + Send + Sync>> {
-    if let Some(update_url) = &*UPDATE_URL {
+    if let Some(version_url) = &*VERSION_URL {
         let client = Client::new();
-        let response = client.get(update_url).send().await?.error_for_status()?;
+        let response = client.get(version_url).send().await?.error_for_status()?;
         let text = response.text().await?;
         Ok(text.trim().to_string())
     } else {
