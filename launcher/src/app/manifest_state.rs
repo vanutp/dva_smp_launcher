@@ -73,12 +73,6 @@ pub struct ManifestState {
     manifest: Option<VersionManifest>,
 }
 
-#[derive(PartialEq)]
-pub enum UpdateResult {
-    ManifestNotUpdated,
-    ManifestUpdated,
-}
-
 impl ManifestState {
     pub fn new() -> Self {
         return ManifestState {
@@ -93,7 +87,7 @@ impl ManifestState {
         runtime: &tokio::runtime::Runtime,
         config: &mut runtime_config::Config,
         ctx: &egui::Context,
-    ) -> UpdateResult {
+    ) -> bool {
         if self.status == FetchStatus::Fetching && self.fetch_task.is_none() {
             let launcher_dir = runtime_config::get_launcher_dir(config);
             let manifest_path = get_manifest_path(&launcher_dir);
@@ -119,22 +113,24 @@ impl ManifestState {
                             runtime_config::save_config(config);
                         }
                         self.manifest = Some(result.manifest);
-                        return UpdateResult::ManifestUpdated;
                     }
                     BackgroundTaskResult::Cancelled => {
                         self.status = FetchStatus::Fetching;
                     }
                 }
+
+                return true;
             }
         }
-        UpdateResult::ManifestNotUpdated
+
+        false
     }
 
     pub fn render_ui(
         &mut self,
         ui: &mut egui::Ui,
         config: &mut runtime_config::Config,
-    ) -> UpdateResult {
+    ) -> bool {
         ui.label(match self.status {
             FetchStatus::Fetching => LangMessage::FetchingVersionManifest.to_string(&config.lang),
             FetchStatus::FetchedRemote => {
@@ -186,9 +182,9 @@ impl ManifestState {
         if config.selected_modpack_name != selected_modpack_name {
             config.selected_modpack_name = selected_modpack_name;
             runtime_config::save_config(config);
-            UpdateResult::ManifestUpdated
+            true
         } else {
-            UpdateResult::ManifestNotUpdated
+            false
         }
     }
 

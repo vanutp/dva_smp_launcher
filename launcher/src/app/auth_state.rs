@@ -85,7 +85,7 @@ impl AuthState {
         };
     }
 
-    pub fn update(&mut self, config: &mut runtime_config::Config, auth_data: &AuthData) {
+    pub fn update(&mut self, config: &mut runtime_config::Config, auth_data: &AuthData) -> bool {
         if let Some(task) = self.auth_task.as_ref() {
             if task.has_result() {
                 self.auth_message_provider.clear();
@@ -113,8 +113,12 @@ impl AuthState {
                         self.auth_status = AuthStatus::NotAuthorized;
                     }
                 }
+
+                return true;
             }
         }
+
+        false
     }
 
     fn render_auth_window(auth_message: LangMessage, lang: &Lang, ui: &mut egui::Ui) {

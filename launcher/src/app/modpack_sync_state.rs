@@ -75,11 +75,6 @@ pub struct ModpackSyncState {
     force_overwrite_checked: bool,
 }
 
-pub enum UpdateResult {
-    ModpackSyncComplete,
-    ModpackNotSynced,
-}
-
 impl ModpackSyncState {
     pub async fn new(ctx: &egui::Context, config: &runtime_config::Config) -> Self {
         let modpack_sync_progress_bar = Arc::new(GuiProgressBar::new(ctx));
@@ -115,7 +110,7 @@ impl ModpackSyncState {
         config: &runtime_config::Config,
         need_modpack_check: bool,
         online_manifest: bool,
-    ) -> UpdateResult {
+    ) -> bool {
         if need_modpack_check {
             self.status = ModpackSyncStatus::NotSynced;
         }
@@ -194,11 +189,12 @@ impl ModpackSyncState {
                 }
 
                 if self.status != ModpackSyncStatus::NotSynced {
-                    return UpdateResult::ModpackSyncComplete;
+                    return true;
                 }
             }
         }
-        UpdateResult::ModpackNotSynced
+
+        false
     }
 
     pub fn schedule_sync_if_needed(&mut self) {

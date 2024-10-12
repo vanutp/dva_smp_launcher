@@ -79,11 +79,6 @@ pub struct MetadataState {
     metadata: Option<Arc<CompleteVersionMetadata>>,
 }
 
-pub enum UpdateResult {
-    MetadataNotUpdated,
-    MetadataUpdated,
-}
-
 impl MetadataState {
     pub fn new() -> Self {
         return MetadataState {
@@ -105,7 +100,7 @@ impl MetadataState {
         config: &mut runtime_config::Config,
         version_info: &VersionInfo,
         ctx: &egui::Context,
-    ) -> UpdateResult {
+    ) -> bool {
         if self.status == GetStatus::Getting && self.get_task.is_none() {
             let launcher_dir = runtime_config::get_launcher_dir(config);
 
@@ -128,16 +123,17 @@ impl MetadataState {
                     BackgroundTaskResult::Finished(result) => {
                         self.status = result.status;
                         self.metadata = result.metadata.map(Arc::new);
-                        return UpdateResult::MetadataUpdated;
                     }
                     BackgroundTaskResult::Cancelled => {
                         self.status = GetStatus::Getting;
                     }
                 }
+
+                return true;
             }
         }
 
-        UpdateResult::MetadataNotUpdated
+        false
     }
 
     pub fn render_ui(&mut self, ui: &mut egui::Ui, config: &runtime_config::Config) {

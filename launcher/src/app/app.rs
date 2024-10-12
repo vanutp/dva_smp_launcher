@@ -7,11 +7,8 @@ use super::java_state::JavaState;
 use super::language_selector::LanguageSelector;
 use super::launch_state::ForceLaunchResult;
 use super::launch_state::LaunchState;
-use super::manifest_state;
 use super::manifest_state::ManifestState;
-use super::metadata_state;
 use super::metadata_state::MetadataState;
-use super::modpack_sync_state;
 use super::modpack_sync_state::ModpackSyncState;
 use crate::config::build_config;
 use crate::config::runtime_config;
@@ -75,24 +72,22 @@ impl LauncherApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.language_selector.render_ui(ui, &mut self.config);
 
-            let manifest_fetch_result =
+            let mut need_check = false;
+
+            need_check |=
                 self.manifest_state
                     .update(&self.runtime, &mut self.config, ctx);
 
             ui.heading(LangMessage::Modpacks.to_string(&self.config.lang));
 
-            let select_modpack_result = self.manifest_state.render_ui(ui, &mut self.config);
+            need_check |= self.manifest_state.render_ui(ui, &mut self.config);
             let selected_modpack = self.manifest_state.get_selected_modpack(&self.config);
             if let Some(selected_modpack) = selected_modpack {
-                let mut need_modpack_check = manifest_fetch_result
-                    == manifest_state::UpdateResult::ManifestUpdated
-                    || select_modpack_result == manifest_state::UpdateResult::ManifestUpdated;
-
-                if need_modpack_check {
+                if need_check {
                     self.metadata_state.reset();
                 }
 
-                let metadata_get_result = self.metadata_state.update(
+                need_check |= self.metadata_state.update(
                     &self.runtime,
                     &mut self.config,
                     selected_modpack,
@@ -100,17 +95,13 @@ impl LauncherApp {
                 );
                 self.metadata_state.render_ui(ui, &self.config);
 
-                if let metadata_state::UpdateResult::MetadataUpdated = metadata_get_result {
-                    need_modpack_check = true;
-                }
-
                 let version_metadata = self.metadata_state.get_version_metadata();
                 if let Some(version_metadata) = version_metadata {
-                    if need_modpack_check {
+                    if need_check {
                         self.auth_state
                             .reset_auth_if_needed(version_metadata.get_auth_data());
                     }
-                    self.auth_state
+                    need_check |= self.auth_state
                         .update(&mut self.config, version_metadata.get_auth_data());
 
                     ui.heading(LangMessage::Authorization.to_string(&self.config.lang));
@@ -128,24 +119,20 @@ impl LauncherApp {
                     {
                         let manifest_online =
                             self.manifest_state.online() && self.metadata_state.online();
-                        let update_result = self.modpack_sync_state.update(
+                        need_check |= self.modpack_sync_state.update(
                             &self.runtime,
                             selected_modpack,
                             version_metadata.clone(),
                             &self.config,
-                            need_modpack_check,
+                            need_check,
                             manifest_online,
                         );
-                        if let modpack_sync_state::UpdateResult::ModpackSyncComplete = update_result
-                        {
-                            need_modpack_check = true;
-                        }
 
                         self.java_state.update(
                             &self.runtime,
                             &version_metadata,
                             &mut self.config,
-                            need_modpack_check,
+                            need_check,
                         );
 
                         self.modpack_sync_state
