@@ -13,9 +13,51 @@ pub struct Object {
     pub url: String,
 }
 
+#[derive(Deserialize, Serialize, Clone)]
+pub struct TelegramAuthData {
+    pub auth_base_url: String,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct ElyByAuthData {
+    pub app_name: String,
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum AuthData {
+    None,
+    Telegram(TelegramAuthData),
+    #[serde(rename = "ely_by")]
+    ElyBy(ElyByAuthData),
+}
+
+impl Default for AuthData {
+    fn default() -> Self {
+        AuthData::None
+    }
+}
+
+impl AuthData {
+    pub fn get_id(&self) -> String {
+        match self {
+            AuthData::Telegram(auth_data) => format!("telegram_{}", auth_data.auth_base_url),
+            AuthData::ElyBy(auth_data) => format!(
+                "elyby_{}_{}_{}",
+                auth_data.app_name, auth_data.client_id, auth_data.client_secret
+            ),
+            AuthData::None => "none".to_string(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct ExtraVersionMetadata {
     pub version_name: String,
+
+    pub auth_provider: AuthData,
 
     #[serde(default)]
     pub include: Vec<String>,

@@ -2618,6 +2618,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 name = "launcher"
 version = "1.0.0"
 dependencies = [
+ "async-trait",
  "ctrlc",
  "dirs",
  "eframe",

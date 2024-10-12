@@ -1,10 +1,6 @@
-use std::{
-    path::Path,
-    sync::{mpsc, Arc},
-};
+use std::{path::Path, sync::Arc};
 
 use shared::version::version_manifest::VersionInfo;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::runtime_config,
@@ -15,7 +11,7 @@ use crate::{
     },
 };
 
-use super::task::Task;
+use super::background_task::{BackgroundTask, BackgroundTaskResult};
 
 #[derive(PartialEq)]
 enum GetStatus {
@@ -35,66 +31,52 @@ fn get_metadata<Callback>(
     runtime: &tokio::runtime::Runtime,
     version_info: &VersionInfo,
     data_dir: &Path,
-    cancellation_token: CancellationToken,
     callback: Callback,
-) -> Task<MetadataFetchResult>
+) -> BackgroundTask<MetadataFetchResult>
 where
     Callback: FnOnce() + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel();
-
     let version_info = version_info.clone();
     let data_dir = data_dir.to_path_buf();
 
-    runtime.spawn(async move {
-        let fut = get_complete_version_metadata(&version_info, &data_dir);
-        let metadata = tokio::select! {
-            _ = cancellation_token.cancelled() => {
+    let fut = async move {
+        let result = get_complete_version_metadata(&version_info, &data_dir).await;
+        match result {
+            Ok(metadata) => MetadataFetchResult {
+                status: GetStatus::UpToDate,
+                metadata: Some(metadata),
+            },
+            Err(e) => {
+                let mut connect_error = false;
+                if let Some(re) = e.downcast_ref::<reqwest::Error>() {
+                    if re.is_connect() {
+                        connect_error = true;
+                    }
+                }
+
+                let local_metadata =
+                    read_local_complete_version_metadata(&version_info, &data_dir).await;
                 MetadataFetchResult {
-                    status: GetStatus::Getting,
-                    metadata: None,
+                    status: if connect_error {
+                        GetStatus::ReadLocalOffline
+                    } else if local_metadata.is_err() {
+                        GetStatus::ErrorGetting(e.to_string())
+                    } else {
+                        GetStatus::ReadLocalRemoteError(e.to_string())
+                    },
+                    metadata: local_metadata.ok(),
                 }
             }
-            result = fut => match result {
-                Ok(metadata) => MetadataFetchResult {
-                    status: GetStatus::UpToDate,
-                    metadata: Some(metadata),
-                },
-                Err(e) => {
-                    let mut connect_error = false;
-                    if let Some(re) = e.downcast_ref::<reqwest::Error>() {
-                        if re.is_connect() {
-                            connect_error = true;
-                        }
-                    }
+        }
+    };
 
-                    let local_metadata = read_local_complete_version_metadata(&version_info, &data_dir).await;
-                    MetadataFetchResult {
-                        status: if connect_error {
-                            GetStatus::ReadLocalOffline
-                        } else if local_metadata.is_err() {
-                            GetStatus::ErrorGetting(e.to_string())
-                        } else {
-                            GetStatus::ReadLocalRemoteError(e.to_string())
-                        },
-                        metadata: local_metadata.ok(),
-                    }
-                }
-            }
-        };
-
-        let _ = tx.send(metadata);
-        callback();
-    });
-
-    return Task::new(rx);
+    BackgroundTask::with_callback(fut, runtime, Box::new(callback))
 }
 
 pub struct MetadataState {
     status: GetStatus,
-    get_task: Option<Task<MetadataFetchResult>>,
+    get_task: Option<BackgroundTask<MetadataFetchResult>>,
     metadata: Option<Arc<CompleteVersionMetadata>>,
-    cancellation_token: CancellationToken,
 }
 
 pub enum UpdateResult {
@@ -108,7 +90,6 @@ impl MetadataState {
             status: GetStatus::Getting,
             get_task: None,
             metadata: None,
-            cancellation_token: CancellationToken::new(),
         };
     }
 
@@ -116,8 +97,6 @@ impl MetadataState {
         self.status = GetStatus::Getting;
         self.get_task = None;
         self.metadata = None;
-        self.cancellation_token.cancel();
-        self.cancellation_token = CancellationToken::new();
     }
 
     pub fn update(
@@ -131,13 +110,10 @@ impl MetadataState {
             let launcher_dir = runtime_config::get_launcher_dir(config);
 
             let ctx = ctx.clone();
-            self.cancellation_token = CancellationToken::new();
-
             self.get_task = Some(get_metadata(
                 runtime,
                 version_info,
                 &launcher_dir,
-                self.cancellation_token.clone(),
                 move || {
                     ctx.request_repaint();
                 },
@@ -145,11 +121,19 @@ impl MetadataState {
         }
 
         if let Some(task) = self.get_task.as_ref() {
-            if let Some(result) = task.take_result() {
-                self.status = result.status;
-                self.metadata = result.metadata.map(Arc::new);
-                self.get_task = None;
-                return UpdateResult::MetadataUpdated;
+            if task.has_result() {
+                let task = self.get_task.take().unwrap();
+                let result = task.take_result();
+                match result {
+                    BackgroundTaskResult::Finished(result) => {
+                        self.status = result.status;
+                        self.metadata = result.metadata.map(Arc::new);
+                        return UpdateResult::MetadataUpdated;
+                    }
+                    BackgroundTaskResult::Cancelled => {
+                        self.status = GetStatus::Getting;
+                    }
+                }
             }
         }
 

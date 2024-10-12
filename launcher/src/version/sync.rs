@@ -259,7 +259,8 @@ pub async fn sync_modpack(
     let mut libraries_with_forge = libraries.clone();
     libraries_with_forge.extend(version_metadata.get_extra_forge_libs().into_iter().cloned());
 
-    check_download_entries.extend(get_libraries_downloads(&libraries_with_forge, &libraries_dir).await?);
+    check_download_entries
+        .extend(get_libraries_downloads(&libraries_with_forge, &libraries_dir).await?);
 
     if let Some(extra) = &version_metadata.extra {
         check_download_entries

@@ -1,8 +1,11 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::{error::Error, future::Future, sync::Arc};
+use shared::version::extra_version_metadata::AuthData;
+use std::{error::Error, sync::Arc};
 
-use super::{elyby::ElyByAuthProvider, telegram::TGAuthProvider};
-use crate::{config::build_config, message_provider::MessageProvider};
+use crate::message_provider::MessageProvider;
+
+use super::{elyby::ElyByAuthProvider, none::NoneAuthProvider, telegram::TGAuthProvider};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct UserInfo {
@@ -10,43 +13,30 @@ pub struct UserInfo {
     pub username: String,
 }
 
+#[async_trait]
 pub trait AuthProvider {
-    fn authenticate(
-        &mut self,
-    ) -> impl Future<Output = Result<String, Box<dyn Error + Send + Sync>>> + Send;
-    fn get_user_info(
+    async fn authenticate(
         &self,
-        token: &str,
-    ) -> impl Future<Output = Result<UserInfo, Box<dyn Error + Send + Sync>>> + Send;
+        message_provider: Arc<dyn MessageProvider>,
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
+
+    async fn get_user_info(&self, token: &str) -> Result<UserInfo, Box<dyn Error + Send + Sync>>;
+
+    fn get_auth_url(&self) -> Option<String>;
+
+    fn get_name(&self) -> String;
 }
 
-pub enum AuthProviderEnum {
-    TG(TGAuthProvider),
-    ElyBy(ElyByAuthProvider),
-}
+pub fn get_auth_provider(auth_data: &AuthData) -> Arc<dyn AuthProvider + Send + Sync> {
+    match auth_data {
+        AuthData::ElyBy(auth_data) => Arc::new(ElyByAuthProvider::new(
+            &auth_data.app_name,
+            &auth_data.client_id,
+            &auth_data.client_secret,
+        )),
 
-impl AuthProvider for AuthProviderEnum {
-    async fn authenticate(&mut self) -> Result<String, Box<dyn Error + Send + Sync>> {
-        match self {
-            AuthProviderEnum::TG(provider) => provider.authenticate().await,
-            AuthProviderEnum::ElyBy(provider) => provider.authenticate().await,
-        }
-    }
+        AuthData::Telegram(auth_data) => Arc::new(TGAuthProvider::new(&auth_data.auth_base_url)),
 
-    async fn get_user_info(&self, token: &str) -> Result<UserInfo, Box<dyn Error + Send + Sync>> {
-        match self {
-            AuthProviderEnum::TG(provider) => provider.get_user_info(token).await,
-            AuthProviderEnum::ElyBy(provider) => provider.get_user_info(token).await,
-        }
-    }
-}
-
-pub fn get_auth_provider(message_provider: Arc<dyn MessageProvider>) -> AuthProviderEnum {
-    if let Some(base_url) = build_config::get_tgauth_base() {
-        AuthProviderEnum::TG(TGAuthProvider::new(base_url, message_provider))
-    } else if let Some(_app_name) = build_config::get_elyby_app_name() {
-        AuthProviderEnum::ElyBy(ElyByAuthProvider::new(message_provider))
-    } else {
-        panic!("No auth provider is set");
+        AuthData::None => Arc::new(NoneAuthProvider::new()),
     }
 }

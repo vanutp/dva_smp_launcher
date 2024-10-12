@@ -1,14 +1,20 @@
 use serde::{Deserialize, Serialize};
+use shared::version::extra_version_metadata::AuthData;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use super::build_config;
-use crate::{auth, constants, lang::Lang};
+use crate::{auth::base::UserInfo, constants, lang::Lang};
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+pub struct VersionAuthData {
+    pub token: String,
+    pub user_info: UserInfo,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub token: Option<String>,
-    pub user_info: Option<auth::base::UserInfo>,
+    pub versions_auth_data: HashMap<String, VersionAuthData>,
     pub java_paths: HashMap<String, String>,
     pub assets_dir: Option<String>,
     pub data_dir: Option<String>,
@@ -16,6 +22,12 @@ pub struct Config {
     pub selected_modpack_name: Option<String>,
     pub lang: Lang,
     pub close_launcher_after_launch: bool,
+}
+
+impl Config {
+    pub fn get_version_auth_data(&self, auth_data: &AuthData) -> Option<&VersionAuthData> {
+        self.versions_auth_data.get(&auth_data.get_id())
+    }
 }
 
 pub fn get_launcher_dir(config: &Config) -> PathBuf {
@@ -60,8 +72,7 @@ pub fn load_config() -> Config {
     }
 
     let config = Config {
-        token: None,
-        user_info: None,
+        versions_auth_data: HashMap::new(),
         java_paths: HashMap::new(),
         assets_dir: None,
         data_dir: None,

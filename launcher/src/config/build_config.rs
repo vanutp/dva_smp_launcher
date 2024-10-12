@@ -12,22 +12,6 @@ pub fn get_auto_update_base() -> Option<String> {
     AUTO_UPDATE_BASE.map(|url| url.to_string())
 }
 
-pub fn get_tgauth_base() -> Option<String> {
-    TGAUTH_BASE.map(|base| base.to_string())
-}
-
-pub fn get_elyby_app_name() -> Option<String> {
-    ELYBY_APP_NAME.map(|app_name| app_name.to_string())
-}
-
-pub fn get_elyby_client_id() -> Option<String> {
-    ELYBY_CLIENT_ID.map(|client_id| client_id.to_string())
-}
-
-pub fn get_elyby_client_secret() -> Option<String> {
-    ELYBY_CLIENT_SECRET.map(|client_secret| client_secret.to_string())
-}
-
 pub fn get_version() -> Option<String> {
     VERSION.map(|version| version.to_string())
 }

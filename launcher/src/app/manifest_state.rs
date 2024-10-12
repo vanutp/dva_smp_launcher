@@ -1,4 +1,4 @@
-use std::{path::Path, sync::mpsc};
+use std::path::Path;
 
 use crate::{
     config::{build_config, runtime_config},
@@ -12,7 +12,7 @@ use shared::{
     },
 };
 
-use super::task::Task;
+use super::background_task::{BackgroundTask, BackgroundTaskResult};
 
 #[derive(Clone, PartialEq)]
 enum FetchStatus {
@@ -31,16 +31,15 @@ fn fetch_manifest<Callback>(
     runtime: &tokio::runtime::Runtime,
     manifest_path: &Path,
     callback: Callback,
-) -> Task<ManifestFetchResult>
+) -> BackgroundTask<ManifestFetchResult>
 where
     Callback: FnOnce() + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel();
     let manifest_path = manifest_path.to_path_buf();
 
-    runtime.spawn(async move {
-        let manifest = match fetch_version_manifest(&build_config::get_version_manifest_url()).await
-        {
+    let fut = async move {
+        let result = fetch_version_manifest(&build_config::get_version_manifest_url()).await;
+        match result {
             Ok(manifest) => ManifestFetchResult {
                 status: FetchStatus::FetchedRemote,
                 manifest: manifest,
@@ -62,18 +61,15 @@ where
                     manifest: load_local_version_manifest_safe(&manifest_path).await,
                 }
             }
-        };
+        }
+    };
 
-        let _ = tx.send(manifest);
-        callback();
-    });
-
-    return Task::new(rx);
+    BackgroundTask::with_callback(fut, runtime, Box::new(callback))
 }
 
 pub struct ManifestState {
     status: FetchStatus,
-    fetch_task: Option<Task<ManifestFetchResult>>,
+    fetch_task: Option<BackgroundTask<ManifestFetchResult>>,
     manifest: Option<VersionManifest>,
 }
 
@@ -109,16 +105,26 @@ impl ManifestState {
         }
 
         if let Some(task) = self.fetch_task.as_ref() {
-            if let Some(result) = task.take_result() {
-                self.status = result.status.clone();
-                if config.selected_modpack_name.is_none() && result.manifest.versions.len() == 1 {
-                    config.selected_modpack_name =
-                        result.manifest.versions.first().map(|x| x.get_name());
-                    runtime_config::save_config(config);
+            if task.has_result() {
+                let task = self.fetch_task.take().unwrap();
+                let result = task.take_result();
+                match result {
+                    BackgroundTaskResult::Finished(result) => {
+                        self.status = result.status.clone();
+                        if config.selected_modpack_name.is_none()
+                            && result.manifest.versions.len() == 1
+                        {
+                            config.selected_modpack_name =
+                                result.manifest.versions.first().map(|x| x.get_name());
+                            runtime_config::save_config(config);
+                        }
+                        self.manifest = Some(result.manifest);
+                        return UpdateResult::ManifestUpdated;
+                    }
+                    BackgroundTaskResult::Cancelled => {
+                        self.status = FetchStatus::Fetching;
+                    }
                 }
-                self.manifest = Some(result.manifest);
-                self.fetch_task = None;
-                return UpdateResult::ManifestUpdated;
             }
         }
         UpdateResult::ManifestNotUpdated

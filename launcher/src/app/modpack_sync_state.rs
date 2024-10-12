@@ -1,7 +1,6 @@
 use shared::paths::get_manifest_path;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
@@ -12,8 +11,8 @@ use crate::version::sync;
 use shared::progress::ProgressBar;
 use shared::version::version_manifest::{self, VersionInfo, VersionManifest};
 
+use super::background_task::{BackgroundTask, BackgroundTaskResult};
 use super::progress_bar::GuiProgressBar;
-use super::task::Task;
 
 #[derive(Clone, PartialEq)]
 enum ModpackSyncStatus {
@@ -37,55 +36,43 @@ fn sync_modpack(
     force_overwrite: bool,
     sync_data: sync::SyncData,
     progress_bar: Arc<dyn ProgressBar<LangMessage>>,
-    cancellation_token: CancellationToken,
-) -> Task<ModpackSyncResult> {
-    progress_bar.set_message(LangMessage::CheckingFiles);
-
-    let (tx, rx) = mpsc::channel();
-
+    callback: Box<dyn FnOnce() + Send>,
+) -> BackgroundTask<ModpackSyncResult> {
     let modpack_metadata = modpack_metadata.clone();
-
-    runtime.spawn(async move {
-        let fut = sync::sync_modpack(
+    let fut = async move {
+        progress_bar.set_message(LangMessage::CheckingFiles);
+        let result = sync::sync_modpack(
             &modpack_metadata,
             force_overwrite,
             sync_data,
             progress_bar.clone(),
-        );
+        )
+        .await;
 
-        let result = tokio::select! {
-            _ = cancellation_token.cancelled() => ModpackSyncResult {
-                status: ModpackSyncStatus::NotSynced,
+        match result {
+            Ok(()) => ModpackSyncResult {
+                status: ModpackSyncStatus::Synced,
             },
-            res = fut => match res {
-                Ok(()) => ModpackSyncResult {
-                    status: ModpackSyncStatus::Synced,
+            Err(e) => ModpackSyncResult {
+                status: if utils::is_connect_error(&e) {
+                    ModpackSyncStatus::SyncErrorOffline
+                } else {
+                    ModpackSyncStatus::SyncError(e.to_string())
                 },
-                Err(e) => ModpackSyncResult {
-                    status: if utils::is_connect_error(&e) {
-                        ModpackSyncStatus::SyncErrorOffline
-                    } else {
-                        ModpackSyncStatus::SyncError(e.to_string())
-                    },
-                },
-            }
-        };
+            },
+        }
+    };
 
-        let _ = tx.send(result);
-        progress_bar.finish();
-    });
-
-    return Task::new(rx);
+    BackgroundTask::with_callback(fut, runtime, callback)
 }
 
 pub struct ModpackSyncState {
     status: ModpackSyncStatus,
-    modpack_sync_task: Option<Task<ModpackSyncResult>>,
+    modpack_sync_task: Option<BackgroundTask<ModpackSyncResult>>,
     modpack_sync_progress_bar: Arc<GuiProgressBar>,
     local_version_manifest: VersionManifest,
     modpack_sync_window_open: bool,
     force_overwrite_checked: bool,
-    cancellation_token: CancellationToken,
 }
 
 pub enum UpdateResult {
@@ -109,7 +96,6 @@ impl ModpackSyncState {
             .await,
             modpack_sync_window_open: false,
             force_overwrite_checked: false,
-            cancellation_token: CancellationToken::new(),
         };
     }
 
@@ -156,7 +142,6 @@ impl ModpackSyncState {
                     let launcher_dir = runtime_config::get_launcher_dir(config);
                     let assets_dir = runtime_config::get_assets_dir(config);
 
-                    self.cancellation_token = CancellationToken::new();
                     self.modpack_sync_progress_bar.reset();
 
                     let path_data = sync::SyncData {
@@ -164,23 +149,33 @@ impl ModpackSyncState {
                         assets_dir,
                         version_name: selected_version_info.get_name(),
                     };
+                    let modpack_sync_progress_bar = self.modpack_sync_progress_bar.clone();
                     self.modpack_sync_task = Some(sync_modpack(
                         runtime,
                         selected_version_metadata,
                         force_overwrite,
                         path_data,
                         self.modpack_sync_progress_bar.clone(),
-                        self.cancellation_token.clone(),
+                        Box::new(move || {
+                            modpack_sync_progress_bar.finish();
+                        }),
                     ));
                 }
             }
         }
 
         if let Some(task) = self.modpack_sync_task.as_ref() {
-            if let Some(result) = task.take_result() {
-                self.status = result.status;
-                self.modpack_sync_task = None;
+            if task.has_result() {
                 self.modpack_sync_window_open = false;
+                let task = self.modpack_sync_task.take();
+                match task.unwrap().take_result() {
+                    BackgroundTaskResult::Finished(result) => {
+                        self.status = result.status;
+                    }
+                    BackgroundTaskResult::Cancelled => {
+                        self.status = ModpackSyncStatus::NotSynced;
+                    }
+                }
 
                 if self.status == ModpackSyncStatus::Synced {
                     self.local_version_manifest
@@ -312,6 +307,8 @@ impl ModpackSyncState {
     }
 
     pub fn cancel_sync(&mut self) {
-        self.cancellation_token.cancel();
+        if let Some(task) = self.modpack_sync_task.as_ref() {
+            task.cancel();
+        }
     }
 }

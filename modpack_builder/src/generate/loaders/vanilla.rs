@@ -86,7 +86,7 @@ impl VersionGenerator for VanillaGenerator {
 
         info!("Vanilla version \"{}\" generated", self.version_name);
 
-        Ok(GeneratorResult{
+        Ok(GeneratorResult {
             id: vanilla_metadata.id.clone(),
             extra_libs_paths: vec![],
         })

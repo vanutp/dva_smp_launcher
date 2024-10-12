@@ -137,7 +137,7 @@ impl VersionGenerator for FabricGenerator {
 
         info!("Fabric version \"{}\" generated", self.version_name);
 
-        Ok(GeneratorResult{
+        Ok(GeneratorResult {
             id: fabric_metadata.id.clone(),
             extra_libs_paths: vec![],
         })

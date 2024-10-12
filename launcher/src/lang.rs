@@ -13,6 +13,7 @@ pub enum LangMessage {
     AuthTimeout,
     AuthError(String),
     AuthorizedAs(String),
+    AuthorizeUsing(String),
     Authorizing,
     Authorize,
     FetchingVersionManifest,
@@ -106,6 +107,10 @@ impl LangMessage {
             LangMessage::AuthorizedAs(username) => match lang {
                 Lang::English => format!("Authorized as {}", username),
                 Lang::Russian => format!("Авторизован как {}", username),
+            },
+            LangMessage::AuthorizeUsing(app_name) => match lang {
+                Lang::English => format!("Authorize using {}", app_name),
+                Lang::Russian => format!("Авторизуйтесь через {}", app_name),
             },
             LangMessage::Authorizing => match lang {
                 Lang::English => "Authorizing...".to_string(),

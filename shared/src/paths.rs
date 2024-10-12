@@ -84,3 +84,9 @@ pub fn get_asset_index_path(assets_dir: &Path, asset_index: &str) -> PathBuf {
     }
     asset_index_dir.join(format!("{}.json", asset_index))
 }
+
+const AUTHLIB_INJECTOR_FILENAME: &str = "authlib-injector.jar";
+
+pub fn get_authlib_injector_path(minecraft_dir: &Path) -> PathBuf {
+    minecraft_dir.join(AUTHLIB_INJECTOR_FILENAME)
+}

@@ -1,7 +1,10 @@
 use log::{error, info, warn};
 use shared::{
     paths::get_manifest_path,
-    version::version_manifest::{save_local_version_manifest, VersionManifest},
+    version::{
+        extra_version_metadata::AuthData,
+        version_manifest::{save_local_version_manifest, VersionManifest},
+    },
 };
 use std::{error::Error, path::Path};
 use tokio::fs;
@@ -44,6 +47,9 @@ pub struct Version {
 
     #[serde(default)]
     pub replace_download_urls: bool,
+
+    #[serde(default)]
+    pub auth_provider: AuthData,
 
     pub exec_before: Option<String>,
     pub exec_after: Option<String>,
@@ -128,7 +134,10 @@ impl VersionsSpec {
             let resources_url_base = if version.replace_download_urls {
                 self.resources_url_base.clone()
             } else {
-                info!("Not setting resources_url_base for version {}", version.name);
+                info!(
+                    "Not setting resources_url_base for version {}",
+                    version.name
+                );
                 None
             };
             let extra_generator = ExtraMetadataGenerator::new(
@@ -139,8 +148,9 @@ impl VersionsSpec {
                 resources_url_base,
                 self.download_server_base.clone(),
                 extra_libs_paths,
+                version.auth_provider.clone(),
             );
-            extra_generator.generate(output_dir).await?;
+            extra_generator.generate(output_dir, work_dir).await?;
 
             let version_info =
                 get_version_info(output_dir, &id, &version.name, &self.download_server_base)

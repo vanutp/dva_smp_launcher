@@ -115,11 +115,7 @@ pub struct Library {
 }
 
 impl Library {
-    pub fn from_download(
-        name: String,
-        url: String,
-        sha1: String,
-    ) -> Self {
+    pub fn from_download(name: String, url: String, sha1: String) -> Self {
         Library {
             name,
             downloads: Some(LibraryDownloads {

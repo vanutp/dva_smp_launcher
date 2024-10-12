@@ -4,9 +4,11 @@ use shared::{
     paths::{get_client_jar_path, get_versions_dir, get_versions_extra_dir},
     version::{
         extra_version_metadata::{
-            get_extra_version_metadata, read_local_extra_version_metadata, ExtraVersionMetadata,
+            get_extra_version_metadata, read_local_extra_version_metadata, AuthData,
+            ExtraVersionMetadata,
         },
-        version_manifest::VersionInfo, version_metadata::Library,
+        version_manifest::VersionInfo,
+        version_metadata::Library,
     },
 };
 
@@ -20,6 +22,8 @@ pub struct CompleteVersionMetadata {
 }
 
 const DEFAULT_RESOURCES_URL_BASE: &str = "https://resources.download.minecraft.net";
+
+const AUTH_DATA_NONE: AuthData = AuthData::None;
 
 impl CompleteVersionMetadata {
     pub fn get_resources_url_base(&self) -> &str {
@@ -60,11 +64,18 @@ impl CompleteVersionMetadata {
 
         None
     }
-    
+
     pub fn get_extra_forge_libs(&self) -> Vec<&Library> {
         match &self.extra {
             Some(extra) => extra.extra_forge_libs.iter().collect(),
             None => Vec::new(),
+        }
+    }
+
+    pub fn get_auth_data(&self) -> &AuthData {
+        match &self.extra {
+            Some(extra) => &extra.auth_provider,
+            None => &AUTH_DATA_NONE,
         }
     }
 }

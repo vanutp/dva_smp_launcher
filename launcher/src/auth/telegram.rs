@@ -2,19 +2,20 @@ use crate::lang::LangMessage;
 use crate::message_provider::MessageProvider;
 
 use super::base::{AuthProvider, UserInfo};
+use async_trait::async_trait;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::error::Error;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct LoginStartResponse {
     code: String,
     intermediate_token: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct BotInfo {
     bot_username: String,
 }
@@ -22,39 +23,36 @@ struct BotInfo {
 pub struct TGAuthProvider {
     client: Client,
     base_url: String,
-    bot_name: Option<String>,
-    message_provider: Arc<dyn MessageProvider>,
 }
 
 impl TGAuthProvider {
-    pub fn new(base_url: String, message_provider: Arc<dyn MessageProvider>) -> Self {
+    pub fn new(base_url: &str) -> Self {
         TGAuthProvider {
             client: Client::new(),
-            base_url,
-            bot_name: None,
-            message_provider,
+            base_url: base_url.to_string(),
         }
     }
 
-    async fn get_bot_name(&mut self) -> Result<String, Box<dyn Error + Send + Sync>> {
-        if self.bot_name.is_none() {
-            let body = self
-                .client
-                .get(format!("{}/info", self.base_url))
-                .send()
-                .await?
-                .text()
-                .await?;
+    async fn get_bot_name(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+        let body = self
+            .client
+            .get(format!("{}/info", self.base_url))
+            .send()
+            .await?
+            .text()
+            .await?;
 
-            let bot_info: BotInfo = serde_json::from_str(&body)?;
-            self.bot_name = Some(bot_info.bot_username);
-        }
-        Ok(self.bot_name.clone().unwrap())
+        let bot_info: BotInfo = serde_json::from_str(&body)?;
+        Ok(bot_info.bot_username)
     }
 }
 
+#[async_trait]
 impl AuthProvider for TGAuthProvider {
-    async fn authenticate(&mut self) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn authenticate(
+        &self,
+        message_provider: Arc<dyn MessageProvider>,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let bot_name = self.get_bot_name().await?;
         let body = self
             .client
@@ -67,8 +65,7 @@ impl AuthProvider for TGAuthProvider {
 
         let tg_deeplink = format!("https://t.me/{}?start={}", bot_name, start_resp.code);
         let _ = open::that(&tg_deeplink);
-        self.message_provider
-            .set_message(LangMessage::AuthMessage { url: tg_deeplink });
+        message_provider.set_message(LangMessage::AuthMessage { url: tg_deeplink });
 
         let access_token;
         loop {
@@ -125,5 +122,13 @@ impl AuthProvider for TGAuthProvider {
         let body = resp.text().await?;
         let user_info: UserInfo = serde_json::from_str(&body).unwrap();
         Ok(user_info)
+    }
+
+    fn get_auth_url(&self) -> Option<String> {
+        Some(self.base_url.clone())
+    }
+
+    fn get_name(&self) -> String {
+        "Telegram".to_string()
     }
 }

@@ -1,4 +1,7 @@
-use std::{error::Error, path::{Path, PathBuf}};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
 

@@ -298,22 +298,28 @@ impl VersionGenerator for ForgeGenerator {
             })
             .collect::<HashSet<_>>();
 
-        let extra_libs_paths_forge = get_files_in_dir(&forge_libraries_dir).into_iter().filter(|path| {
-            let extension = path.extension().and_then(|ext| ext.to_str());
-            path.is_file() && extension == Some("jar") && !metadata_libs_paths.contains(path)
-        }).collect::<Vec<_>>();
+        let extra_libs_paths_forge = get_files_in_dir(&forge_libraries_dir)
+            .into_iter()
+            .filter(|path| {
+                let extension = path.extension().and_then(|ext| ext.to_str());
+                path.is_file() && extension == Some("jar") && !metadata_libs_paths.contains(path)
+            })
+            .collect::<Vec<_>>();
         info!("Found {} extra forge libs", extra_libs_paths_forge.len());
         debug!("Extra forge libs: {:?}", extra_libs_paths_forge);
 
         // copy extra forge libs to output dir
         let libraries_dir = get_libraries_dir(&output_dir, &self.version_name);
-        let extra_libs_paths = extra_libs_paths_forge.into_iter().map(|lib_path| {
-            let lib_path_relative = lib_path.strip_prefix(&forge_libraries_dir)?;
-            let lib_dest = libraries_dir.join(lib_path_relative);
-            std::fs::create_dir_all(lib_dest.parent().unwrap())?;
-            std::fs::copy(&lib_path, &lib_dest)?;
-            Ok(lib_dest)
-        }).collect::<Result<Vec<_>, Box<dyn Error + Send + Sync>>>()?;
+        let extra_libs_paths = extra_libs_paths_forge
+            .into_iter()
+            .map(|lib_path| {
+                let lib_path_relative = lib_path.strip_prefix(&forge_libraries_dir)?;
+                let lib_dest = libraries_dir.join(lib_path_relative);
+                std::fs::create_dir_all(lib_dest.parent().unwrap())?;
+                std::fs::copy(&lib_path, &lib_dest)?;
+                Ok(lib_dest)
+            })
+            .collect::<Result<Vec<_>, Box<dyn Error + Send + Sync>>>()?;
 
         if self.replace_download_urls {
             info!("Syncing version");

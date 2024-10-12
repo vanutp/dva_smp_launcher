@@ -1,12 +1,13 @@
 use log::debug;
 use maplit::hashmap;
-use shared::paths::{get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir};
+use shared::paths::{
+    get_authlib_injector_path, get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tokio::process::{Child, Command as TokioCommand};
 
-use crate::auth::elyby::ELY_BY_BASE;
-use crate::config::build_config;
+use crate::auth::base::get_auth_provider;
 use crate::config::runtime_config::{get_assets_dir, get_launcher_dir, Config};
 use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use crate::version::overrides::with_overrides;
@@ -16,7 +17,6 @@ use shared::version::version_metadata;
 
 use super::compat;
 
-const AUTHLIB_INJECTOR_FILENAME: &str = "authlib-injector.jar";
 const GC_OPTIONS: &[&str] = &[
     "-XX:+UnlockExperimentalVMOptions",
     "-XX:+UseG1GC",
@@ -60,6 +60,10 @@ fn process_args(
 
 #[derive(thiserror::Error, Debug)]
 pub enum LaunchError {
+    #[error("Not authorized")]
+    NotAuthorized,
+    #[error("Missing authlib injector")]
+    MissingAuthlibInjector,
     #[error("Missing library {0}")]
     MissingLibrary(PathBuf),
     #[error("Invalid path {0}")]
@@ -76,6 +80,15 @@ pub async fn launch(
     online: bool,
 ) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
     let base_version_metadata = &version_metadata.base;
+
+    let auth_data = version_metadata.get_auth_data();
+    let auth_provider = get_auth_provider(auth_data);
+
+    let version_auth_data = config.get_version_auth_data(auth_data);
+    if version_auth_data.is_none() {
+        return Err(Box::new(LaunchError::NotAuthorized));
+    }
+    let version_auth_data = version_auth_data.unwrap();
 
     let launcher_dir = get_launcher_dir(config);
     let mut minecraft_dir = get_minecraft_dir(&launcher_dir, version_metadata.get_name());
@@ -141,13 +154,13 @@ pub async fn launch(
         "classpath".to_string() => classpath_str,
         "classpath_separator".to_string() => PATHSEP.to_string(),
         "library_directory".to_string() => libraries_dir.to_str().unwrap().to_string(),
-        "auth_player_name".to_string() => config.user_info.as_ref().unwrap().username.clone(),
+        "auth_player_name".to_string() => version_auth_data.user_info.username.clone(),
         "version_name".to_string() => base_version_metadata.id.clone(),
         "game_directory".to_string() => minecraft_dir.to_str().unwrap().to_string(),
         "assets_root".to_string() => get_assets_dir(&config).to_str().unwrap().to_string(),
         "assets_index_name".to_string() => base_version_metadata.asset_index.id.clone(),
-        "auth_uuid".to_string() => config.user_info.as_ref().unwrap().uuid.replace("-", ""),
-        "auth_access_token".to_string() => config.token.as_ref().unwrap().clone(),
+        "auth_uuid".to_string() => version_auth_data.user_info.uuid.replace("-", ""),
+        "auth_access_token".to_string() => version_auth_data.token.clone(),
         "clientid".to_string() => "".to_string(),
         "auth_xuid".to_string() => "".to_string(),
         "user_type".to_string() => if online { "mojang" } else { "offline" }.to_string(),
@@ -172,25 +185,19 @@ pub async fn launch(
     .concat();
 
     if online {
-        let authlib_injector_path = minecraft_dir.join(AUTHLIB_INJECTOR_FILENAME);
-        if authlib_injector_path.exists() {
-            let auth_server = if build_config::get_tgauth_base().is_some() {
-                Some(build_config::get_tgauth_base().unwrap())
-            } else if build_config::get_elyby_app_name().is_some() {
-                Some(ELY_BY_BASE.to_string())
-            } else {
-                None
-            };
-            if let Some(auth_server) = auth_server {
-                java_options.insert(
-                    0,
-                    format!(
-                        "-javaagent:{}={}",
-                        authlib_injector_path.to_str().unwrap(),
-                        auth_server
-                    ),
-                );
+        if let Some(auth_url) = auth_provider.get_auth_url() {
+            let authlib_injector_path = get_authlib_injector_path(&minecraft_dir);
+            if !authlib_injector_path.exists() {
+                return Err(Box::new(LaunchError::MissingAuthlibInjector));
             }
+            java_options.insert(
+                0,
+                format!(
+                    "-javaagent:{}={}",
+                    authlib_injector_path.to_str().unwrap(),
+                    auth_url,
+                ),
+            );
         }
     }
 

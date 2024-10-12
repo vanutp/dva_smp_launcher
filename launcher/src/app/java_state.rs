@@ -1,9 +1,8 @@
 use egui::Widget as _;
 use shared::paths::get_java_dir;
 use std::path::Path;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tokio_util::sync::CancellationToken;
 
 use crate::config::runtime_config;
 use crate::lang::{Lang, LangMessage};
@@ -13,8 +12,8 @@ use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use shared::java;
 use shared::progress::{ProgressBar, Unit};
 
+use super::background_task::{BackgroundTask, BackgroundTaskResult};
 use super::progress_bar::GuiProgressBar;
-use super::task::Task;
 
 #[derive(Clone, PartialEq)]
 pub enum JavaDownloadStatus {
@@ -35,54 +34,45 @@ pub fn download_java(
     required_version: &str,
     java_dir: &Path,
     progress_bar: Arc<dyn ProgressBar<LangMessage>>,
-    cancellation_token: CancellationToken,
-) -> Task<JavaDownloadResult> {
-    progress_bar.set_message(LangMessage::DownloadingJava);
-
-    let (tx, rx) = mpsc::channel();
-
+) -> BackgroundTask<JavaDownloadResult> {
+    let progress_bar_clone = progress_bar.clone();
     let required_version = required_version.to_string();
     let java_dir = java_dir.to_path_buf();
-
-    runtime.spawn(async move {
-        let fut = java::download_java(&required_version, &java_dir, progress_bar.clone());
-
-        let result = tokio::select! {
-            _ = cancellation_token.cancelled() => JavaDownloadResult {
-                status: JavaDownloadStatus::NotDownloaded,
+    let fut = async move {
+        progress_bar_clone.set_message(LangMessage::DownloadingJava);
+        let result = java::download_java(&required_version, &java_dir, progress_bar_clone).await;
+        match result {
+            Ok(java_installation) => JavaDownloadResult {
+                status: JavaDownloadStatus::Downloaded,
+                java_installation: Some(java_installation),
+            },
+            Err(e) => JavaDownloadResult {
+                status: if utils::is_connect_error(&e) {
+                    JavaDownloadStatus::DownloadErrorOffline
+                } else {
+                    JavaDownloadStatus::DownloadError(e.to_string())
+                },
                 java_installation: None,
             },
-            res = fut => match res {
-                Ok(java_installation) => JavaDownloadResult {
-                    status: JavaDownloadStatus::Downloaded,
-                    java_installation: Some(java_installation),
-                },
-                Err(e) => JavaDownloadResult {
-                    status: if utils::is_connect_error(&e) {
-                        JavaDownloadStatus::DownloadErrorOffline
-                    } else {
-                        JavaDownloadStatus::DownloadError(e.to_string())
-                    },
-                    java_installation: None,
-                },
-            },
-        };
+        }
+    };
 
-        let _ = tx.send(result);
-        progress_bar.finish();
-    });
-
-    return Task::new(rx);
+    BackgroundTask::with_callback(
+        fut,
+        runtime,
+        Box::new(move || {
+            progress_bar.finish();
+        }),
+    )
 }
 
 pub struct JavaState {
     status: JavaDownloadStatus,
-    java_download_task: Option<Task<JavaDownloadResult>>,
+    java_download_task: Option<BackgroundTask<JavaDownloadResult>>,
     java_download_progress_bar: Arc<GuiProgressBar>,
     settings_opened: bool,
     picked_java_path: Option<String>,
     selected_xmx: Option<String>,
-    cancellation_token: CancellationToken,
 }
 
 impl JavaState {
@@ -99,7 +89,6 @@ impl JavaState {
             settings_opened: false,
             picked_java_path: None,
             selected_xmx: None,
-            cancellation_token: CancellationToken::new(),
         }
     }
 
@@ -156,34 +145,42 @@ impl JavaState {
             let java_dir = get_java_dir(&launcher_dir);
 
             self.java_download_progress_bar.reset();
-            self.cancellation_token = CancellationToken::new();
 
             let java_download_task = download_java(
                 runtime,
                 &metadata.get_java_version(),
                 &java_dir,
                 self.java_download_progress_bar.clone(),
-                self.cancellation_token.clone(),
             );
             self.java_download_task = Some(java_download_task);
         }
 
         if let Some(task) = self.java_download_task.as_ref() {
-            if let Some(result) = task.take_result() {
-                self.status = result.status;
-                self.java_download_task = None;
-                if self.status == JavaDownloadStatus::Downloaded {
-                    let path = result.java_installation.as_ref().unwrap().path.clone();
-                    if java::check_java(&metadata.get_java_version(), &path) {
-                        config.java_paths.insert(
-                            metadata.get_name().to_string(),
-                            path.to_str().unwrap().to_string(),
-                        );
-                        runtime_config::save_config(config);
-                    } else {
-                        self.status = JavaDownloadStatus::DownloadError(
-                            "Downloaded Java is not valid".to_string(),
-                        );
+            if task.has_result() {
+                let task = self.java_download_task.take().unwrap();
+                let result = task.take_result();
+                match result {
+                    BackgroundTaskResult::Finished(result) => {
+                        self.status = result.status;
+                        self.java_download_task = None;
+                        if self.status == JavaDownloadStatus::Downloaded {
+                            let path = result.java_installation.as_ref().unwrap().path.clone();
+                            if java::check_java(&metadata.get_java_version(), &path) {
+                                config.java_paths.insert(
+                                    metadata.get_name().to_string(),
+                                    path.to_str().unwrap().to_string(),
+                                );
+                                runtime_config::save_config(config);
+                            } else {
+                                self.status = JavaDownloadStatus::DownloadError(
+                                    "Downloaded Java is not valid".to_string(),
+                                );
+                            }
+                        }
+                    }
+                    BackgroundTaskResult::Cancelled => {
+                        self.status = JavaDownloadStatus::NotDownloaded;
+                        self.java_download_task = None;
                     }
                 }
             }
@@ -353,6 +350,8 @@ impl JavaState {
     }
 
     pub fn cancel_download(&mut self) {
-        self.cancellation_token.cancel();
+        if let Some(task) = self.java_download_task.as_ref() {
+            task.cancel();
+        }
     }
 }

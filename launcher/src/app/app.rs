@@ -75,15 +75,9 @@ impl LauncherApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.language_selector.render_ui(ui, &mut self.config);
 
-            self.auth_state.update(&self.runtime, &mut self.config);
             let manifest_fetch_result =
                 self.manifest_state
                     .update(&self.runtime, &mut self.config, ctx);
-
-            ui.heading(LangMessage::Authorization.to_string(&self.config.lang));
-
-            let username = self.config.user_info.as_ref().map(|x| x.username.as_str());
-            self.auth_state.render_ui(ui, &self.config.lang, username);
 
             ui.heading(LangMessage::Modpacks.to_string(&self.config.lang));
 
@@ -112,6 +106,22 @@ impl LauncherApp {
 
                 let version_metadata = self.metadata_state.get_version_metadata();
                 if let Some(version_metadata) = version_metadata {
+                    if need_modpack_check {
+                        self.auth_state
+                            .reset_auth_if_needed(version_metadata.get_auth_data());
+                    }
+                    self.auth_state
+                        .update(&mut self.config, version_metadata.get_auth_data());
+
+                    ui.heading(LangMessage::Authorization.to_string(&self.config.lang));
+                    self.auth_state.render_ui(
+                        ui,
+                        &self.config,
+                        &self.runtime,
+                        ctx,
+                        version_metadata.get_auth_data(),
+                    );
+
                     let manifest_online =
                         self.manifest_state.online() && self.metadata_state.online();
                     let update_result = self.modpack_sync_state.update(
@@ -139,7 +149,7 @@ impl LauncherApp {
                     self.java_state
                         .render_ui(ui, &mut self.config, &version_metadata);
 
-                    if AuthState::ready_for_launch(&self.config) {
+                    if AuthState::ready_for_launch(&self.config, version_metadata.get_auth_data()) {
                         if self.java_state.ready_for_launch()
                             && (self.modpack_sync_state.ready_for_launch() || !manifest_online)
                         {

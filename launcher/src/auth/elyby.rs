@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::mpsc::channel;
@@ -9,14 +10,14 @@ use tokio::sync::{mpsc::unbounded_channel, oneshot};
 use warp::Filter;
 use warp::{http::Uri, reply::Reply};
 
+use crate::lang::LangMessage;
 use crate::message_provider::MessageProvider;
-use crate::{config::build_config, lang::LangMessage};
 
 use super::base::{AuthProvider, UserInfo};
 
-pub const ELY_BY_BASE: &str = "https://ely.by/";
+const ELY_BY_BASE: &str = "https://ely.by/";
 
-// TODO: test this horrible code
+// TODO: rewrite this horrible code
 #[derive(Debug)]
 struct InvalidCodeError;
 
@@ -29,9 +30,9 @@ impl std::fmt::Display for InvalidCodeError {
 }
 
 pub struct ElyByAuthProvider {
-    redirect_uri: Option<String>,
-    token: Option<String>,
-    message_provider: Arc<dyn MessageProvider>,
+    app_name: String,
+    client_id: String,
+    client_secret: String,
 }
 
 #[derive(Deserialize)]
@@ -40,41 +41,37 @@ struct AuthQuery {
 }
 
 impl ElyByAuthProvider {
-    pub fn new(message_provider: Arc<dyn MessageProvider>) -> Self {
-        Self {
-            redirect_uri: None,
-            token: None,
-            message_provider,
+    pub fn new(elyby_app_name: &str, elyby_client_id: &str, elyby_client_secret: &str) -> Self {
+        ElyByAuthProvider {
+            app_name: elyby_app_name.to_string(),
+            client_id: elyby_client_id.to_string(),
+            client_secret: elyby_client_secret.to_string(),
         }
     }
 
-    fn print_auth_url(&self) {
-        if let Some(ref redirect_uri) = self.redirect_uri {
-            let url = format!(
-                "https://account.ely.by/oauth2/v1?client_id={}&redirect_uri={}&response_type=code&scope=account_info%20minecraft_server_session&prompt=select_account",
-                build_config::get_elyby_client_id().unwrap(), redirect_uri
-            );
-            let _ = open::that(&url);
-            self.message_provider
-                .set_message(LangMessage::AuthMessage { url });
-        } else {
-            panic!("redirect_uri is not set");
-        }
+    fn print_auth_url(&self, redirect_uri: &str, message_provider: Arc<dyn MessageProvider>) {
+        let url = format!(
+            "https://account.ely.by/oauth2/v1?client_id={}&redirect_uri={}&response_type=code&scope=account_info%20minecraft_server_session&prompt=select_account",
+            &self.client_id, redirect_uri
+        );
+        let _ = open::that(&url);
+        message_provider.set_message(LangMessage::AuthMessage { url });
     }
 
-    async fn exchange_code(&self, code: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn exchange_code(
+        &self,
+        code: &str,
+        redirect_uri: &str,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let client = Client::new();
         let resp = client
             .post("https://account.ely.by/api/oauth2/v1/token")
             .form(&[
-                ("client_id", &build_config::get_elyby_client_id().unwrap()),
-                (
-                    "client_secret",
-                    &build_config::get_elyby_client_secret().unwrap(),
-                ),
-                ("redirect_uri", self.redirect_uri.as_ref().unwrap()),
-                ("grant_type", &"authorization_code".to_string()),
-                ("code", &code.to_string()),
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.client_secret.as_str()),
+                ("redirect_uri", redirect_uri),
+                ("grant_type", "authorization_code"),
+                ("code", code),
             ])
             .send()
             .await?;
@@ -95,8 +92,12 @@ impl ElyByAuthProvider {
     }
 }
 
+#[async_trait]
 impl AuthProvider for ElyByAuthProvider {
-    async fn authenticate(&mut self) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn authenticate(
+        &self,
+        message_provider: Arc<dyn MessageProvider>,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         let (code_tx, mut code_rx) = unbounded_channel();
         let code_tx = Arc::new(Mutex::new(code_tx));
 
@@ -105,6 +106,7 @@ impl AuthProvider for ElyByAuthProvider {
 
         let handle = {
             let code_tx = Arc::clone(&code_tx);
+            let app_name = self.app_name.clone();
             warp::any()
                 .and(warp::query::<AuthQuery>())
                 .map(move |query: AuthQuery| {
@@ -119,7 +121,7 @@ impl AuthProvider for ElyByAuthProvider {
                         Box::new(warp::redirect::temporary(
                             Uri::from_maybe_shared(format!(
                                 "https://account.ely.by/oauth2/code/success?appName={}",
-                                build_config::get_elyby_app_name().unwrap()
+                                &app_name
                             ))
                             .unwrap(),
                         ))
@@ -133,17 +135,17 @@ impl AuthProvider for ElyByAuthProvider {
                 shutdown_rx.await.ok();
             });
 
-        self.redirect_uri = Some(format!("http://localhost:{}/", addr.port()));
+        let redirect_uri = format!("http://localhost:{}/", addr.port());
 
         tokio::spawn(server);
-        self.print_auth_url();
+        self.print_auth_url(&redirect_uri, message_provider);
 
         loop {
             let code = code_rx.recv().await.unwrap();
-            match self.exchange_code(&code).await {
+            match self.exchange_code(&code, &redirect_uri).await {
                 Ok(token) => {
-                    self.token = Some(token);
-                    break;
+                    shutdown_tx.send(()).unwrap();
+                    return Ok(token);
                 }
                 Err(e) => {
                     if e.downcast_ref::<InvalidCodeError>().is_none() {
@@ -153,12 +155,7 @@ impl AuthProvider for ElyByAuthProvider {
                     error_tx.send(()).unwrap();
                 }
             }
-            break;
         }
-
-        shutdown_tx.send(()).unwrap();
-
-        Ok(self.token.as_ref().unwrap().clone())
     }
 
     async fn get_user_info(&self, token: &str) -> Result<UserInfo, Box<dyn Error + Send + Sync>> {
@@ -172,5 +169,13 @@ impl AuthProvider for ElyByAuthProvider {
 
         let data: UserInfo = resp.json().await?;
         Ok(data)
+    }
+
+    fn get_auth_url(&self) -> Option<String> {
+        Some(ELY_BY_BASE.to_string())
+    }
+
+    fn get_name(&self) -> String {
+        "Ely.by".to_string()
     }
 }
