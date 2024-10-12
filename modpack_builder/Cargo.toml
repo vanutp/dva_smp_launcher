@@ -16,3 +16,7 @@ serde_json = "1.0.128"
 shared = { path = "../shared" }
 thiserror = "1.0.64"
 tokio = "1.40.0"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3.9", features = ["fileapi", "winbase"] }
+winreg = "0.52.0"

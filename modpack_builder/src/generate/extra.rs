@@ -175,7 +175,11 @@ async fn download_authlib_injector(
     std::fs::copy(&authlib_injector_path, &output_authlib_injector_path)?;
 
     let hash = files::hash_file(&output_authlib_injector_path).await?;
-    let url = get_url_from_path(&output_authlib_injector_path, data_dir, download_server_base)?;
+    let url = get_url_from_path(
+        &output_authlib_injector_path,
+        data_dir,
+        download_server_base,
+    )?;
 
     Ok(Object {
         path: output_authlib_injector_path

@@ -122,34 +122,38 @@ impl LauncherApp {
                         version_metadata.get_auth_data(),
                     );
 
-                    let manifest_online =
-                        self.manifest_state.online() && self.metadata_state.online();
-                    let update_result = self.modpack_sync_state.update(
-                        &self.runtime,
-                        selected_modpack,
-                        version_metadata.clone(),
-                        &self.config,
-                        need_modpack_check,
-                        manifest_online,
-                    );
-                    if let modpack_sync_state::UpdateResult::ModpackSyncComplete = update_result {
-                        need_modpack_check = true;
-                    }
+                    if self
+                        .auth_state
+                        .ready_for_launch(version_metadata.get_auth_data())
+                    {
+                        let manifest_online =
+                            self.manifest_state.online() && self.metadata_state.online();
+                        let update_result = self.modpack_sync_state.update(
+                            &self.runtime,
+                            selected_modpack,
+                            version_metadata.clone(),
+                            &self.config,
+                            need_modpack_check,
+                            manifest_online,
+                        );
+                        if let modpack_sync_state::UpdateResult::ModpackSyncComplete = update_result
+                        {
+                            need_modpack_check = true;
+                        }
 
-                    self.java_state.update(
-                        &self.runtime,
-                        &version_metadata,
-                        &mut self.config,
-                        need_modpack_check,
-                    );
+                        self.java_state.update(
+                            &self.runtime,
+                            &version_metadata,
+                            &mut self.config,
+                            need_modpack_check,
+                        );
 
-                    self.modpack_sync_state
-                        .render_ui(ui, &mut self.config, manifest_online);
+                        self.modpack_sync_state
+                            .render_ui(ui, &mut self.config, manifest_online);
 
-                    self.java_state
-                        .render_ui(ui, &mut self.config, &version_metadata);
+                        self.java_state
+                            .render_ui(ui, &mut self.config, &version_metadata);
 
-                    if AuthState::ready_for_launch(&self.config, version_metadata.get_auth_data()) {
                         if self.java_state.ready_for_launch()
                             && (self.modpack_sync_state.ready_for_launch() || !manifest_online)
                         {

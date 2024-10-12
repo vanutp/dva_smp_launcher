@@ -42,7 +42,7 @@ winreg = "0.52.0"
 [build-dependencies]
 winres = "0.1.12"
 
-[package.metadata.bundle]
+[package.metadata.bundle.bin.launcher]
 name = "Potato Launcher"
 identifier = "com.petr1furious.potato_launcher"
-icon = ["assets/icon.icns"]
+icon = ["launcher/assets/icon.icns"]

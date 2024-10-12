@@ -181,7 +181,7 @@ impl AuthState {
 
         match &self.auth_status {
             AuthStatus::NotAuthorized if self.auth_task.is_none() => {
-                if let Some(version_auth_data) = self.runtime_auth.get(&auth_data.get_id()) {
+                if let Some(version_auth_data) = config.get_version_auth_data(auth_data) {
                     let token = version_auth_data.token.clone();
                     self.set_auth_task(ctx, runtime, auth_provider.clone(), Some(&token));
                 }
@@ -229,8 +229,8 @@ impl AuthState {
         }
     }
 
-    pub fn ready_for_launch(config: &runtime_config::Config, auth_data: &AuthData) -> bool {
-        config.get_version_auth_data(auth_data).is_some()
+    pub fn ready_for_launch(&self, auth_data: &AuthData) -> bool {
+        self.runtime_auth.contains_key(&auth_data.get_id())
     }
 
     pub fn online(&self) -> bool {
