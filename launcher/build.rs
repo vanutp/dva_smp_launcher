@@ -4,7 +4,7 @@ use std::fs;
 fn main() {
     let build_envs = ["LAUNCHER_NAME", "VERSION_MANIFEST_URL"];
 
-    let optional_envs = ["DISPLAY_LAUNCHER_NAME", "VERSION", "AUTO_UPDATE_BASE"];
+    let optional_envs = ["AUTO_UPDATE_BASE", "VERSION"];
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = format!("{}/generated.rs", out_dir);
