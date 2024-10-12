@@ -29,58 +29,52 @@ jobs:
         run: |
           echo "VERSION=$GITHUB_SHA" >> $GITHUB_ENV
           echo "LAUNCHER_NAME=${{ vars.LAUNCHER_NAME }}" >> $GITHUB_ENV
-          echo "SERVER_BASE=${{ vars.SERVER_BASE }}" >> $GITHUB_ENV
-          if [ -n "${{ vars.TGAUTH_BASE }}" ]; then echo "TGAUTH_BASE=${{ vars.TGAUTH_BASE }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ vars.ELYBY_APP_NAME }}" ]; then echo "ELYBY_APP_NAME=${{ vars.ELYBY_APP_NAME }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ vars.ELYBY_CLIENT_ID }}" ]; then echo "ELYBY_CLIENT_ID=${{ vars.ELYBY_CLIENT_ID }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ vars.ELYBY_CLIENT_SECRET }}" ]; then echo "ELYBY_CLIENT_SECRET=${{ vars.ELYBY_CLIENT_SECRET }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ vars.DISPLAY_LAUNCHER_NAME }}" ]; then
-            echo "DISPLAY_LAUNCHER_NAME=${{ vars.DISPLAY_LAUNCHER_NAME }}" >> $GITHUB_ENV
-          else
-            echo "DISPLAY_LAUNCHER_NAME=${{ vars.LAUNCHER_NAME }}" >> $GITHUB_ENV
-          fi
+          echo "VERSION_MANIFEST_URL=${{ vars.VERSION_MANIFEST_URL }}" >> $GITHUB_ENV
+          if [ -n "${{ vars.AUTO_UPDATE_BASE }}" ]; then echo "AUTO_UPDATE_BASE=${{ vars.AUTO_UPDATE_BASE }}" >> $GITHUB_ENV; fi
+          if [ -n "${{ vars.DISPLAY_LAUNCHER_NAME }}" ]; then echo "DISPLAY_LAUNCHER_NAME=${{ vars.DISPLAY_LAUNCHER_NAME }}" >> $GITHUB_ENV; fi
 
       - name: Build the launcher
         run: |
-          mkdir -p launcher
+          mkdir -p build
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cargo build --release
-            mv "target/release/potato_launcher.exe" "launcher/${DISPLAY_LAUNCHER_NAME}.exe"
-            echo "$VERSION" > launcher/version_windows.txt
+            cargo build --bin launcher --release
+            mv "target/release/launcher.exe" "build/${DISPLAY_LAUNCHER_NAME}.exe"
+            echo "$VERSION" > build/version_windows.txt
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            cargo build --release
-            mv "target/release/potato_launcher" "launcher/${LAUNCHER_NAME}"
-            echo "$VERSION" > launcher/version_linux.txt
+            cargo build --bin launcher --release
+            mv "target/release/launcher" "build/${LAUNCHER_NAME}"
+            echo "$VERSION" > build/version_linux.txt
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             mkdir -p icon.iconset
-            sips -z 16 16     "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_16x16.png
-            sips -z 32 32     "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_16x16@2x.png
-            sips -z 32 32     "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_32x32.png
-            sips -z 64 64     "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_32x32@2x.png
-            sips -z 64 64     "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_64x64.png
-            sips -z 128 128   "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_64x64@2x.png
-            sips -z 128 128   "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_128x128.png
-            sips -z 256 256   "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_128x128@2x.png
-            sips -z 256 256   "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_256x256.png
-            sips -z 512 512   "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_256x256@2x.png
-            sips -z 512 512   "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_512x512.png
-            sips -z 1024 1024 "assets/$LAUNCHER_NAME.png" --out icon.iconset/icon_512x512@2x.png
-            iconutil -c icns icon.iconset -o assets/icon.icns
+            PNG_PATH="launcher/assets/$LAUNCHER_NAME.png"
+            sips -z 16 16     "$PNG_PATH" --out icon.iconset/icon_16x16.png
+            sips -z 32 32     "$PNG_PATH" --out icon.iconset/icon_16x16@2x.png
+            sips -z 32 32     "$PNG_PATH" --out icon.iconset/icon_32x32.png
+            sips -z 64 64     "$PNG_PATH" --out icon.iconset/icon_32x32@2x.png
+            sips -z 64 64     "$PNG_PATH" --out icon.iconset/icon_64x64.png
+            sips -z 128 128   "$PNG_PATH" --out icon.iconset/icon_64x64@2x.png
+            sips -z 128 128   "$PNG_PATH" --out icon.iconset/icon_128x128.png
+            sips -z 256 256   "$PNG_PATH" --out icon.iconset/icon_128x128@2x.png
+            sips -z 256 256   "$PNG_PATH" --out icon.iconset/icon_256x256.png
+            sips -z 512 512   "$PNG_PATH" --out icon.iconset/icon_256x256@2x.png
+            sips -z 512 512   "$PNG_PATH" --out icon.iconset/icon_512x512.png
+            sips -z 1024 1024 "$PNG_PATH" --out icon.iconset/icon_512x512@2x.png
+            iconutil -c icns icon.iconset -o launcher/assets/icon.icns
 
             cargo install cargo-bundle
 
             export MACOSX_DEPLOYMENT_TARGET=10.8
 
-            cargo bundle --release --target aarch64-apple-darwin
+            cargo bundle --bin launcher --release --target aarch64-apple-darwin
             mkdir -p app
             cp -r "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app" "app/$DISPLAY_LAUNCHER_NAME.app"
 
             rustup target add x86_64-apple-darwin
-            cargo bundle --release --target x86_64-apple-darwin
+            cargo bundle --bin launcher --release --target x86_64-apple-darwin
 
-            lipo -create -output "app/$DISPLAY_LAUNCHER_NAME.app/Contents/MacOS/potato_launcher" \
-              "target/x86_64-apple-darwin/release/bundle/osx/Potato Launcher.app/Contents/MacOS/potato_launcher" \
-              "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app/Contents/MacOS/potato_launcher"
+            lipo -create -output "app/$DISPLAY_LAUNCHER_NAME.app/Contents/MacOS/launcher" \
+              "target/x86_64-apple-darwin/release/bundle/osx/Potato Launcher.app/Contents/MacOS/launcher" \
+              "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app/Contents/MacOS/launcher"
 
             codesign --force --deep --sign - "app/$DISPLAY_LAUNCHER_NAME.app"
 
@@ -97,12 +91,12 @@ jobs:
               sleep 5
             done
 
-            mv "$DMG_FILENAME" launcher/
+            mv "$DMG_FILENAME" build/
 
             mv "app/$DISPLAY_LAUNCHER_NAME.app" "app/update.app"
-            tar -czvf "launcher/${LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
+            tar -czvf "build/${LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
 
-            echo "$VERSION" > launcher/version_macos.txt
+            echo "$VERSION" > build/version_macos.txt
           fi
 
       - name: Set up SSH
@@ -118,7 +112,7 @@ jobs:
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_ADDR: ${{ secrets.SERVER_ADDR }}
           SERVER_PATH: ${{ secrets.SERVER_PATH }}
-        run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null launcher/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
+        run: scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null build/* $SERVER_USER@$SERVER_ADDR:$SERVER_PATH/
 
       - name: Purge Cloudflare cache
         if: github.ref == 'refs/heads/master'
@@ -131,4 +125,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: launcher-${{ matrix.os }}
-          path: launcher/*
+          path: build/*
