@@ -67,7 +67,7 @@ pub fn run_gui(config: &runtime_config::Config) {
     let lang = config.lang.clone();
 
     run_native(
-        &format!("{} Updater", build_config::get_display_launcher_name()),
+        &format!("{} Updater", build_config::get_launcher_name()),
         native_options,
         Box::new(|cc| Ok(Box::new(UpdateApp::new(lang, &cc.egui_ctx)))),
     )

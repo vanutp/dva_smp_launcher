@@ -34,7 +34,7 @@ pub fn get_launcher_dir(config: &Config) -> PathBuf {
     let data_dir = match &config.data_dir {
         None => dirs::data_dir()
             .expect("Failed to get data directory")
-            .join(build_config::get_launcher_name()),
+            .join(build_config::get_data_launcher_name()),
 
         Some(dir) => PathBuf::from(dir),
     };
@@ -47,7 +47,7 @@ pub fn get_launcher_dir(config: &Config) -> PathBuf {
 fn get_config_path() -> PathBuf {
     let data_dir = dirs::data_dir().expect("Failed to get data directory");
     data_dir
-        .join(build_config::get_launcher_name())
+        .join(build_config::get_data_launcher_name())
         .join("config.json")
 }
 

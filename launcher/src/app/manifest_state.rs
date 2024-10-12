@@ -126,11 +126,7 @@ impl ManifestState {
         false
     }
 
-    pub fn render_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        config: &mut runtime_config::Config,
-    ) -> bool {
+    pub fn render_ui(&mut self, ui: &mut egui::Ui, config: &mut runtime_config::Config) -> bool {
         ui.label(match self.status {
             FetchStatus::Fetching => LangMessage::FetchingVersionManifest.to_string(&config.lang),
             FetchStatus::FetchedRemote => {

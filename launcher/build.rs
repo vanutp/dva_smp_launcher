@@ -30,11 +30,12 @@ fn main() {
     fs::write(dest_path, config_content).unwrap();
 
     if cfg!(target_os = "windows") {
+        let data_launcher_name = env::var("LAUNCHER_NAME")
+            .unwrap()
+            .to_lowercase()
+            .replace(" ", "_");
         let mut res = winres::WindowsResource::new();
-        res.set_icon(&format!(
-            "assets/{}.ico",
-            env::var("LAUNCHER_NAME").unwrap()
-        ));
+        res.set_icon(&format!("assets/{}.ico", data_launcher_name));
         res.compile().unwrap();
     }
 }

@@ -1,6 +1,10 @@
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
 pub fn get_launcher_name() -> String {
+    LAUNCHER_NAME.to_string()
+}
+
+pub fn get_data_launcher_name() -> String {
     LAUNCHER_NAME.to_string().to_lowercase().replace(" ", "_")
 }
 
@@ -14,10 +18,6 @@ pub fn get_auto_update_base() -> Option<String> {
 
 pub fn get_version() -> Option<String> {
     VERSION.map(|version| version.to_string())
-}
-
-pub fn get_display_launcher_name() -> String {
-    LAUNCHER_NAME.to_string()
 }
 
 pub const LAUNCHER_ICON: &[u8] = include_bytes!("../../assets/potato_launcher.png");

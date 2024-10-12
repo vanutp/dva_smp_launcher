@@ -29,24 +29,25 @@ jobs:
         run: |
           echo "VERSION=$GITHUB_SHA" >> $GITHUB_ENV
           echo "LAUNCHER_NAME=${{ vars.LAUNCHER_NAME }}" >> $GITHUB_ENV
+          DATA_LAUNCHER_NAME=$(echo "${{ vars.LAUNCHER_NAME }}" | tr '[:upper:]' '[:lower:]' | tr ' ' '_')
+          echo "DATA_LAUNCHER_NAME=$DATA_LAUNCHER_NAME" >> $GITHUB_ENV
           echo "VERSION_MANIFEST_URL=${{ vars.VERSION_MANIFEST_URL }}" >> $GITHUB_ENV
           if [ -n "${{ vars.AUTO_UPDATE_BASE }}" ]; then echo "AUTO_UPDATE_BASE=${{ vars.AUTO_UPDATE_BASE }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ vars.DISPLAY_LAUNCHER_NAME }}" ]; then echo "DISPLAY_LAUNCHER_NAME=${{ vars.DISPLAY_LAUNCHER_NAME }}" >> $GITHUB_ENV; fi
 
       - name: Build the launcher
         run: |
           mkdir -p build
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             cargo build --bin launcher --release
-            mv "target/release/launcher.exe" "build/${DISPLAY_LAUNCHER_NAME}.exe"
+            mv "target/release/launcher.exe" "build/${LAUNCHER_NAME}.exe"
             echo "$VERSION" > build/version_windows.txt
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             cargo build --bin launcher --release
-            mv "target/release/launcher" "build/${LAUNCHER_NAME}"
+            mv "target/release/launcher" "build/${DATA_LAUNCHER_NAME}"
             echo "$VERSION" > build/version_linux.txt
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             mkdir -p icon.iconset
-            PNG_PATH="launcher/assets/$LAUNCHER_NAME.png"
+            PNG_PATH="launcher/assets/$DATA_LAUNCHER_NAME.png"
             sips -z 16 16     "$PNG_PATH" --out icon.iconset/icon_16x16.png
             sips -z 32 32     "$PNG_PATH" --out icon.iconset/icon_16x16@2x.png
             sips -z 32 32     "$PNG_PATH" --out icon.iconset/icon_32x32.png
@@ -67,25 +68,25 @@ jobs:
 
             cargo bundle --bin launcher --release --target aarch64-apple-darwin
             mkdir -p app
-            cp -r "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app" "app/$DISPLAY_LAUNCHER_NAME.app"
+            cp -r "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app" "app/$LAUNCHER_NAME.app"
 
             rustup target add x86_64-apple-darwin
             cargo bundle --bin launcher --release --target x86_64-apple-darwin
 
-            lipo -create -output "app/$DISPLAY_LAUNCHER_NAME.app/Contents/MacOS/launcher" \
+            lipo -create -output "app/$LAUNCHER_NAME.app/Contents/MacOS/launcher" \
               "target/x86_64-apple-darwin/release/bundle/osx/Potato Launcher.app/Contents/MacOS/launcher" \
               "target/aarch64-apple-darwin/release/bundle/osx/Potato Launcher.app/Contents/MacOS/launcher"
 
-            codesign --force --deep --sign - "app/$DISPLAY_LAUNCHER_NAME.app"
+            codesign --force --deep --sign - "app/$LAUNCHER_NAME.app"
 
-            DMG_FILENAME="${DISPLAY_LAUNCHER_NAME}.dmg"
+            DMG_FILENAME="${LAUNCHER_NAME}.dmg"
 
             # CI runner sometimes fails with "hdiutil: create failed - Resource busy", so retry a few times
             retry=0
             max_retries=5
             until [ $retry -ge $max_retries ]
             do
-              hdiutil create "$DMG_FILENAME" -ov -volname "$DISPLAY_LAUNCHER_NAME" -fs HFS+ -srcfolder "app/" && break
+              hdiutil create "$DMG_FILENAME" -ov -volname "$LAUNCHER_NAME" -fs HFS+ -srcfolder "app/" && break
               retry=$((retry+1))
               echo "Retrying hdiutil create... ($retry/$max_retries)"
               sleep 5
@@ -93,8 +94,8 @@ jobs:
 
             mv "$DMG_FILENAME" build/
 
-            mv "app/$DISPLAY_LAUNCHER_NAME.app" "app/update.app"
-            tar -czvf "build/${LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
+            mv "app/$LAUNCHER_NAME.app" "app/update.app"
+            tar -czvf "build/${DATA_LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
 
             echo "$VERSION" > build/version_macos.txt
           fi

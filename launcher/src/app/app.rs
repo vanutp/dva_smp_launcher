@@ -36,7 +36,7 @@ pub fn run_gui(config: runtime_config::Config) {
     };
 
     run_native(
-        &build_config::get_display_launcher_name(),
+        &build_config::get_launcher_name(),
         native_options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
@@ -74,9 +74,9 @@ impl LauncherApp {
 
             let mut need_check = false;
 
-            need_check |=
-                self.manifest_state
-                    .update(&self.runtime, &mut self.config, ctx);
+            need_check |= self
+                .manifest_state
+                .update(&self.runtime, &mut self.config, ctx);
 
             ui.heading(LangMessage::Modpacks.to_string(&self.config.lang));
 
@@ -101,7 +101,8 @@ impl LauncherApp {
                         self.auth_state
                             .reset_auth_if_needed(version_metadata.get_auth_data());
                     }
-                    need_check |= self.auth_state
+                    need_check |= self
+                        .auth_state
                         .update(&mut self.config, version_metadata.get_auth_data());
 
                     ui.heading(LangMessage::Authorization.to_string(&self.config.lang));
