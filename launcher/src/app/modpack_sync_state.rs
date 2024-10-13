@@ -79,7 +79,7 @@ impl ModpackSyncState {
     pub async fn new(ctx: &egui::Context, config: &runtime_config::Config) -> Self {
         let modpack_sync_progress_bar = Arc::new(GuiProgressBar::new(ctx));
 
-        let launcher_dir = runtime_config::get_launcher_dir(config);
+        let launcher_dir = config.get_launcher_dir();
 
         return ModpackSyncState {
             status: ModpackSyncStatus::NotSynced,
@@ -134,8 +134,8 @@ impl ModpackSyncState {
                 }
 
                 if self.status != ModpackSyncStatus::Synced {
-                    let launcher_dir = runtime_config::get_launcher_dir(config);
-                    let assets_dir = runtime_config::get_assets_dir(config);
+                    let launcher_dir = config.get_launcher_dir();
+                    let assets_dir = config.get_assets_dir();
 
                     self.modpack_sync_progress_bar.reset();
 
@@ -180,7 +180,7 @@ impl ModpackSyncState {
                         .versions
                         .push(selected_version_info.clone());
 
-                    let launcher_dir = runtime_config::get_launcher_dir(config);
+                    let launcher_dir = config.get_launcher_dir();
 
                     let _ = runtime.block_on(version_manifest::save_local_version_manifest(
                         &self.local_version_manifest,
@@ -222,51 +222,71 @@ impl ModpackSyncState {
         config: &mut runtime_config::Config,
         manifest_online: bool,
     ) {
-        ui.label(match &self.status {
-            ModpackSyncStatus::NotSynced => LangMessage::ModpackNotSynced.to_string(&config.lang),
+        match &self.status {
+            ModpackSyncStatus::NotSynced => {
+                ui.label(LangMessage::ModpackNotSynced.to_string(&config.lang));
+            }
             ModpackSyncStatus::Syncing {
                 ignore_version: _,
                 force_overwrite: _,
-            } => LangMessage::SyncingModpack.to_string(&config.lang),
-            ModpackSyncStatus::Synced => LangMessage::ModpackSynced.to_string(&config.lang),
+            } => {
+                // should be shown in the progress bar
+            }
+            ModpackSyncStatus::Synced => {
+                ui.label(LangMessage::ModpackSynced.to_string(&config.lang));
+            }
             ModpackSyncStatus::SyncError(e) => {
-                LangMessage::ModpackSyncError(e.clone()).to_string(&config.lang)
+                ui.label(LangMessage::ModpackSyncError(e.clone()).to_string(&config.lang));
             }
             ModpackSyncStatus::SyncErrorOffline => {
-                LangMessage::NoConnectionToSyncServer.to_string(&config.lang)
+                ui.label(LangMessage::NoConnectionToSyncServer.to_string(&config.lang));
             }
-        });
-
-        if !manifest_online {
-            return;
         }
-        if ui
-            .button(LangMessage::SyncModpack.to_string(&config.lang))
-            .clicked()
-        {
-            if self.status == ModpackSyncStatus::NotSynced {
-                self.status = ModpackSyncStatus::Syncing {
-                    ignore_version: false,
-                    force_overwrite: false,
-                };
+
+        if manifest_online {
+            if self.modpack_sync_task.is_some() && !self.modpack_sync_window_open {
+                self.modpack_sync_progress_bar.render(ui, &config.lang);
+                self.render_cancel_button(ui, &config.lang);
             } else {
-                self.modpack_sync_window_open = true;
+                if ui
+                    .button(LangMessage::SyncModpack.to_string(&config.lang))
+                    .clicked()
+                {
+                    match &self.status {
+                        ModpackSyncStatus::NotSynced
+                        | ModpackSyncStatus::SyncError(_)
+                        | ModpackSyncStatus::SyncErrorOffline => {
+                            self.status = ModpackSyncStatus::Syncing {
+                                ignore_version: false,
+                                force_overwrite: false,
+                            };
+                        }
+
+                        _ => {
+                            self.modpack_sync_window_open = true;
+                        }
+                    }
+                }
+
+                self.render_sync_window(ui, &config.lang);
             }
         }
+    }
 
-        if self.modpack_sync_window_open {
-            let mut modpack_sync_window_open = self.modpack_sync_window_open.clone();
-            egui::Window::new(LangMessage::SyncModpack.to_string(&config.lang))
-                .open(&mut modpack_sync_window_open)
-                .show(ui.ctx(), |ui| {
+    pub fn render_sync_window(&mut self, ui: &mut egui::Ui, lang: &Lang) {
+        let mut modpack_sync_window_open = self.modpack_sync_window_open.clone();
+        egui::Window::new(LangMessage::SyncModpack.to_string(lang))
+            .open(&mut modpack_sync_window_open)
+            .show(ui.ctx(), |ui| {
+                ui.vertical_centered(|ui| {
                     ui.checkbox(
                         &mut self.force_overwrite_checked,
-                        LangMessage::ForceOverwrite.to_string(&config.lang),
+                        LangMessage::ForceOverwrite.to_string(lang),
                     );
-                    ui.label(LangMessage::ForceOverwriteWarning.to_string(&config.lang));
+                    ui.label(LangMessage::ForceOverwriteWarning.to_string(lang));
 
                     if ui
-                        .button(LangMessage::SyncModpack.to_string(&config.lang))
+                        .button(LangMessage::SyncModpack.to_string(lang))
                         .clicked()
                     {
                         self.status = ModpackSyncStatus::Syncing {
@@ -276,17 +296,12 @@ impl ModpackSyncState {
                     }
 
                     if self.modpack_sync_task.is_some() {
-                        self.modpack_sync_progress_bar.render(ui, &config.lang);
-                        self.render_cancel_button(ui, &config.lang);
+                        self.modpack_sync_progress_bar.render(ui, lang);
+                        self.render_cancel_button(ui, lang);
                     }
                 });
-            self.modpack_sync_window_open = modpack_sync_window_open;
-        } else {
-            if self.modpack_sync_task.is_some() {
-                self.modpack_sync_progress_bar.render(ui, &config.lang);
-                self.render_cancel_button(ui, &config.lang);
-            }
-        }
+            });
+        self.modpack_sync_window_open = modpack_sync_window_open;
     }
 
     pub fn ready_for_launch(&self) -> bool {

@@ -8,3 +8,4 @@ mod manifest_state;
 mod metadata_state;
 mod modpack_sync_state;
 pub mod progress_bar;
+mod settings;

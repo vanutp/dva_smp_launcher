@@ -4,21 +4,20 @@ use tokio::runtime::Runtime;
 
 use super::auth_state::AuthState;
 use super::java_state::JavaState;
-use super::language_selector::LanguageSelector;
 use super::launch_state::ForceLaunchResult;
 use super::launch_state::LaunchState;
 use super::manifest_state::ManifestState;
 use super::metadata_state::MetadataState;
 use super::modpack_sync_state::ModpackSyncState;
+use super::settings::SettingsState;
 use crate::config::build_config;
 use crate::config::runtime_config;
-use crate::lang::LangMessage;
 use crate::utils;
 
 pub struct LauncherApp {
     runtime: Runtime,
     config: runtime_config::Config,
-    language_selector: LanguageSelector,
+    settings_state: SettingsState,
     auth_state: AuthState,
     manifest_state: ManifestState,
     metadata_state: MetadataState,
@@ -30,7 +29,7 @@ pub struct LauncherApp {
 pub fn run_gui(config: runtime_config::Config) {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size((400.0, 400.0))
+            .with_inner_size((350.0, 300.0))
             .with_icon(utils::get_icon_data()),
         ..Default::default()
     };
@@ -56,7 +55,7 @@ impl LauncherApp {
     fn new(config: runtime_config::Config, ctx: &egui::Context) -> Self {
         let runtime = Runtime::new().unwrap();
         LauncherApp {
-            language_selector: LanguageSelector::new(),
+            settings_state: SettingsState::new(),
             auth_state: AuthState::new(ctx),
             manifest_state: ManifestState::new(),
             metadata_state: MetadataState::new(),
@@ -69,110 +68,131 @@ impl LauncherApp {
     }
 
     fn ui(&mut self, ctx: &egui::Context) {
+        let mut selected_metadata = None;
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.language_selector.render_ui(ui, &mut self.config);
+            ui.vertical_centered(|ui| {
+                let mut need_check = false;
 
-            let mut need_check = false;
+                need_check |= self
+                    .manifest_state
+                    .update(&self.runtime, &mut self.config, ctx);
 
-            need_check |= self
-                .manifest_state
-                .update(&self.runtime, &mut self.config, ctx);
+                need_check |= self.manifest_state.render_ui(ui, &mut self.config);
+                ui.separator();
 
-            ui.heading(LangMessage::Modpacks.to_string(&self.config.lang));
-
-            need_check |= self.manifest_state.render_ui(ui, &mut self.config);
-            let selected_modpack = self.manifest_state.get_selected_modpack(&self.config);
-            if let Some(selected_modpack) = selected_modpack {
-                if need_check {
-                    self.metadata_state.reset();
-                }
-
-                need_check |= self.metadata_state.update(
-                    &self.runtime,
-                    &mut self.config,
-                    selected_modpack,
-                    ctx,
-                );
-                self.metadata_state.render_ui(ui, &self.config);
-
-                let version_metadata = self.metadata_state.get_version_metadata();
-                if let Some(version_metadata) = version_metadata {
+                let selected_modpack = self.manifest_state.get_selected_modpack(&self.config);
+                if let Some(selected_modpack) = selected_modpack {
                     if need_check {
-                        self.auth_state
-                            .reset_auth_if_needed(version_metadata.get_auth_data());
+                        self.metadata_state.reset();
                     }
-                    need_check |= self
-                        .auth_state
-                        .update(&mut self.config, version_metadata.get_auth_data());
 
-                    ui.heading(LangMessage::Authorization.to_string(&self.config.lang));
-                    self.auth_state.render_ui(
-                        ui,
-                        &self.config,
+                    need_check |= self.metadata_state.update(
                         &self.runtime,
+                        &mut self.config,
+                        selected_modpack,
                         ctx,
-                        version_metadata.get_auth_data(),
                     );
 
-                    if self
-                        .auth_state
-                        .ready_for_launch(version_metadata.get_auth_data())
-                    {
-                        let manifest_online =
-                            self.manifest_state.online() && self.metadata_state.online();
-                        need_check |= self.modpack_sync_state.update(
-                            &self.runtime,
-                            selected_modpack,
-                            version_metadata.clone(),
+                    if self.metadata_state.render_ui(ui, &self.config) {
+                        ui.separator();
+                    }
+
+                    let version_metadata = self.metadata_state.get_version_metadata();
+                    if let Some(version_metadata) = version_metadata {
+                        selected_metadata = Some(version_metadata.clone());
+                        if need_check {
+                            self.auth_state
+                                .reset_auth_if_needed(version_metadata.get_auth_data());
+                        }
+                        need_check |= self
+                            .auth_state
+                            .update(&mut self.config, version_metadata.get_auth_data());
+
+                        self.auth_state.render_ui(
+                            ui,
                             &self.config,
-                            need_check,
-                            manifest_online,
-                        );
-
-                        self.java_state.update(
                             &self.runtime,
-                            &version_metadata,
-                            &mut self.config,
-                            need_check,
+                            ctx,
+                            version_metadata.get_auth_data(),
                         );
 
-                        self.modpack_sync_state
-                            .render_ui(ui, &mut self.config, manifest_online);
-
-                        self.java_state
-                            .render_ui(ui, &mut self.config, &version_metadata);
-
-                        if self.java_state.ready_for_launch()
-                            && (self.modpack_sync_state.ready_for_launch() || !manifest_online)
+                        if self
+                            .auth_state
+                            .ready_for_launch(version_metadata.get_auth_data(), &self.config)
                         {
-                            self.launch_state.update();
-                            self.launch_state.render_ui(
+                            let manifest_online =
+                                self.manifest_state.online() && self.metadata_state.online();
+                            need_check |= self.modpack_sync_state.update(
                                 &self.runtime,
+                                selected_modpack,
+                                version_metadata.clone(),
+                                &self.config,
+                                need_check,
+                                manifest_online,
+                            );
+
+                            self.java_state.update(
+                                &self.runtime,
+                                &version_metadata,
+                                &mut self.config,
+                                need_check,
+                            );
+
+                            ui.separator();
+                            self.modpack_sync_state.render_ui(
                                 ui,
                                 &mut self.config,
-                                &version_metadata,
-                                self.auth_state.online(),
+                                manifest_online,
                             );
-                        } else {
-                            let force_launch_result =
-                                self.launch_state.render_download_ui(ui, &mut self.config);
-                            match force_launch_result {
-                                ForceLaunchResult::ForceLaunchSelected => {
-                                    self.modpack_sync_state.schedule_sync_if_needed();
-                                    self.java_state.schedule_download_if_needed();
+
+                            ui.separator();
+                            self.java_state
+                                .render_ui(ui, &mut self.config, &version_metadata);
+
+                            if self.java_state.ready_for_launch()
+                                && (self.modpack_sync_state.ready_for_launch() || !manifest_online)
+                            {
+                                self.launch_state.update();
+
+                                self.launch_state.render_ui(
+                                    &self.runtime,
+                                    ui,
+                                    &mut self.config,
+                                    &version_metadata,
+                                    self.auth_state.online(),
+                                );
+                            } else {
+                                let force_launch_result =
+                                    self.launch_state.render_download_ui(ui, &mut self.config);
+                                match force_launch_result {
+                                    ForceLaunchResult::ForceLaunchSelected => {
+                                        self.modpack_sync_state.schedule_sync_if_needed();
+                                        self.java_state.schedule_download_if_needed();
+                                    }
+                                    ForceLaunchResult::CancelSelected => {
+                                        self.java_state.cancel_download();
+                                        self.modpack_sync_state.cancel_sync();
+                                    }
+                                    ForceLaunchResult::NotSelected => {}
                                 }
-                                ForceLaunchResult::CancelSelected => {
-                                    self.java_state.cancel_download();
-                                    self.modpack_sync_state.cancel_sync();
-                                }
-                                ForceLaunchResult::NotSelected => {}
                             }
                         }
                     }
                 }
-            }
-
-            ui.add_space(10.0);
+            });
         });
+
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
+                    let selected_metadata_ref = selected_metadata.as_deref();
+                    self.settings_state
+                        .render_ui(ui, &mut self.config, selected_metadata_ref);
+                });
+                ui.add_space(5.0);
+            });
     }
 }

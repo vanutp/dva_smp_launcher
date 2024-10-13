@@ -1,3 +1,5 @@
+use egui::WidgetText;
+use shared::paths::get_logs_dir;
 use tokio::{process::Child, runtime::Runtime};
 
 use crate::{
@@ -74,19 +76,10 @@ impl LaunchState {
         }
     }
 
-    fn render_close_launcher_checkbox(
-        &mut self,
-        ui: &mut egui::Ui,
-        config: &mut runtime_config::Config,
-    ) {
-        let old_close_launcher_after_launch = config.close_launcher_after_launch;
-        ui.checkbox(
-            &mut config.close_launcher_after_launch,
-            LangMessage::CloseLauncherAfterLaunch.to_string(&config.lang),
-        );
-        if old_close_launcher_after_launch != config.close_launcher_after_launch {
-            runtime_config::save_config(config);
-        }
+    fn big_button_clicked(ui: &mut egui::Ui, text: &str) -> bool {
+        let widget_text = WidgetText::from(text).text_style(egui::TextStyle::Button);
+        let button = egui::Button::new(widget_text);
+        ui.add_sized([150.0, 35.0], button).clicked()
     }
 
     pub fn render_ui(
@@ -109,15 +102,14 @@ impl LaunchState {
             }
             _ => {
                 if self.force_launch
-                    || ui
-                        .button(LangMessage::Launch.to_string(&config.lang))
-                        .clicked()
+                    || LaunchState::big_button_clicked(
+                        ui,
+                        &LangMessage::Launch.to_string(&config.lang),
+                    )
                 {
                     self.force_launch = false;
                     self.launch(runtime, config, selected_modpack, online);
                 }
-
-                self.render_close_launcher_checkbox(ui, config);
             }
         }
 
@@ -127,6 +119,12 @@ impl LaunchState {
             }
             LauncherStatus::ProcessErrorCode(e) => {
                 ui.label(LangMessage::ProcessErrorCode(e.clone()).to_string(&config.lang));
+                if ui
+                    .button(LangMessage::OpenLogs.to_string(&config.lang))
+                    .clicked()
+                {
+                    open::that(get_logs_dir(&config.get_launcher_dir())).unwrap();
+                }
             }
             _ => {}
         }
@@ -138,25 +136,22 @@ impl LaunchState {
         config: &mut runtime_config::Config,
     ) -> ForceLaunchResult {
         if !self.force_launch {
-            if ui
-                .button(LangMessage::DownloadAndLaunch.to_string(&config.lang))
-                .clicked()
-            {
+            if LaunchState::big_button_clicked(
+                ui,
+                &LangMessage::DownloadAndLaunch.to_string(&config.lang),
+            ) {
                 self.force_launch = true;
                 return ForceLaunchResult::ForceLaunchSelected;
             }
         } else {
             let mut cancel_clicked = false;
-            ui.horizontal(|ui| {
-                if ui
-                    .button(LangMessage::CancelLaunch.to_string(&config.lang))
-                    .clicked()
-                {
-                    self.force_launch = false;
-                    cancel_clicked = true;
-                }
-            });
-            self.render_close_launcher_checkbox(ui, config);
+            if LaunchState::big_button_clicked(
+                ui,
+                &LangMessage::CancelLaunch.to_string(&config.lang),
+            ) {
+                self.force_launch = false;
+                cancel_clicked = true;
+            }
             if cancel_clicked {
                 return ForceLaunchResult::CancelSelected;
             }

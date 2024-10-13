@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tokio::process::{Child, Command as TokioCommand};
 
 use crate::auth::base::get_auth_provider;
-use crate::config::runtime_config::{get_assets_dir, get_launcher_dir, Config};
+use crate::config::runtime_config::Config;
 use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use crate::version::overrides::with_overrides;
 use crate::version::rules;
@@ -90,7 +90,7 @@ pub async fn launch(
     }
     let version_auth_data = version_auth_data.unwrap();
 
-    let launcher_dir = get_launcher_dir(config);
+    let launcher_dir = config.get_launcher_dir();
     let mut minecraft_dir = get_minecraft_dir(&launcher_dir, version_metadata.get_name());
     let libraries_dir = get_libraries_dir(&launcher_dir, version_metadata.get_name());
     let natives_dir = get_natives_dir(&launcher_dir, version_metadata.get_name());
@@ -157,7 +157,7 @@ pub async fn launch(
         "auth_player_name".to_string() => version_auth_data.user_info.username.clone(),
         "version_name".to_string() => base_version_metadata.id.clone(),
         "game_directory".to_string() => minecraft_dir.to_str().unwrap().to_string(),
-        "assets_root".to_string() => get_assets_dir(&config).to_str().unwrap().to_string(),
+        "assets_root".to_string() => config.get_assets_dir().to_str().unwrap().to_string(),
         "assets_index_name".to_string() => base_version_metadata.asset_index.id.clone(),
         "auth_uuid".to_string() => version_auth_data.user_info.uuid.replace("-", ""),
         "auth_access_token".to_string() => version_auth_data.token.clone(),

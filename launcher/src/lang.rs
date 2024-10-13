@@ -12,16 +12,16 @@ pub enum LangMessage {
     NoConnectionToAuthServer { offline_username: Option<String> },
     AuthTimeout,
     AuthError(String),
-    AuthorizedAs(String),
+    AuthorizedAs,
     AuthorizeUsing(String),
     Authorizing,
     Authorize,
     FetchingVersionManifest,
-    FetchedRemoteManifest,
     NoConnectionToManifestServer,
     ErrorFetchingRemoteManifest(String),
     FetchManifest,
     SelectModpack,
+    NotSelected,
     NoModpacks,
     GettingVersionMetadata,
     NoConnectionToMetadataServer,
@@ -31,25 +31,23 @@ pub enum LangMessage {
     DownloadingFiles,
     SyncModpack,
     ModpackNotSynced,
-    SyncingModpack,
     ModpackSynced,
     NoConnectionToSyncServer,
     ModpackSyncError(String),
     DownloadingJava,
-    DownloadJava { version: String },
     JavaInstalled { version: String },
     NeedJava { version: String },
     ErrorDownloadingJava(String),
     NoConnectionToJavaServer,
-    JavaSettings,
-    SelectedJavaPath { path: Option<String> },
+    Settings,
+    SelectedJavaPath,
+    NoJavaPath,
     JavaXMX,
     SelectJavaPath,
     Launch,
     LaunchError(String),
     ProcessErrorCode(String),
     Running,
-    Language,
     LanguageName,
     DownloadingUpdate,
     CheckingForUpdates,
@@ -60,16 +58,15 @@ pub enum LangMessage {
     ErrorReadOnly,
     ProceedToLauncher,
     Authorization,
-    Modpacks,
     ForceOverwrite,
     ForceOverwriteWarning,
-    OpenLauncherDirectory,
     KillMinecraft,
     CloseLauncherAfterLaunch,
     DownloadAndLaunch,
     CancelLaunch,
     CancelDownload,
     Retry,
+    OpenLogs,
 }
 
 impl LangMessage {
@@ -104,9 +101,9 @@ impl LangMessage {
                 Lang::English => format!("Authorization error: {}", e),
                 Lang::Russian => format!("Ошибка авторизации: {}", e),
             },
-            LangMessage::AuthorizedAs(username) => match lang {
-                Lang::English => format!("Authorized as {}", username),
-                Lang::Russian => format!("Авторизован как {}", username),
+            LangMessage::AuthorizedAs => match lang {
+                Lang::English => "Authorized as".to_string(),
+                Lang::Russian => "Авторизован как".to_string(),
             },
             LangMessage::AuthorizeUsing(app_name) => match lang {
                 Lang::English => format!("Authorize using {}", app_name),
@@ -124,10 +121,6 @@ impl LangMessage {
                 Lang::English => "Fetching modpack list...".to_string(),
                 Lang::Russian => "Получение списка модпаков...".to_string(),
             },
-            LangMessage::FetchedRemoteManifest => match lang {
-                Lang::English => "Modpack list fetched".to_string(),
-                Lang::Russian => "Список модпаков получен".to_string(),
-            },
             LangMessage::NoConnectionToManifestServer => match lang {
                 Lang::English => "Error: no connection to the modpack server".to_string(),
                 Lang::Russian => "Ошибка: нет подключения к серверу модпаков".to_string(),
@@ -141,8 +134,12 @@ impl LangMessage {
                 Lang::Russian => "Получить список модпаков".to_string(),
             },
             LangMessage::SelectModpack => match lang {
-                Lang::English => "Select modpack".to_string(),
-                Lang::Russian => "Выберите модпак".to_string(),
+                Lang::English => "Select modpack:".to_string(),
+                Lang::Russian => "Выберите модпак:".to_string(),
+            },
+            LangMessage::NotSelected => match lang {
+                Lang::English => "Not selected".to_string(),
+                Lang::Russian => "Не выбран".to_string(),
             },
             LangMessage::NoModpacks => match lang {
                 Lang::English => "No modpacks fetched".to_string(),
@@ -180,10 +177,6 @@ impl LangMessage {
                 Lang::English => "Modpack not synced".to_string(),
                 Lang::Russian => "Модпак не синхронизирован".to_string(),
             },
-            LangMessage::SyncingModpack => match lang {
-                Lang::English => "Syncing modpack...".to_string(),
-                Lang::Russian => "Синхронизация модпака...".to_string(),
-            },
             LangMessage::ModpackSynced => match lang {
                 Lang::English => "Modpack up-to-date".to_string(),
                 Lang::Russian => "Модпак синхронизирован".to_string(),
@@ -199,10 +192,6 @@ impl LangMessage {
             LangMessage::DownloadingJava => match lang {
                 Lang::English => "Downloading Java...".to_string(),
                 Lang::Russian => "Загрузка Java...".to_string(),
-            },
-            LangMessage::DownloadJava { version } => match lang {
-                Lang::English => format!("Download Java {}", version),
-                Lang::Russian => format!("Загрузить Java {}", version),
             },
             LangMessage::JavaInstalled { version } => match lang {
                 Lang::English => format!("Java {} installed", version),
@@ -220,19 +209,17 @@ impl LangMessage {
                 Lang::English => "Error: no connection to the Java download server".to_string(),
                 Lang::Russian => "Ошибка: нет подключения к серверу загрузки Java".to_string(),
             },
-            LangMessage::JavaSettings => match lang {
-                Lang::English => "Java Settings".to_string(),
-                Lang::Russian => "Настройки Java".to_string(),
+            LangMessage::Settings => match lang {
+                Lang::English => "Settings".to_string(),
+                Lang::Russian => "Настройки".to_string(),
             },
-            LangMessage::SelectedJavaPath { path } => match lang {
-                Lang::English => format!(
-                    "Selected Java path:\n{}",
-                    path.as_ref().unwrap_or(&"Path not selected".to_string())
-                ),
-                Lang::Russian => format!(
-                    "Выбранный путь к Java:\n{}",
-                    path.as_ref().unwrap_or(&"Путь не выбран".to_string())
-                ),
+            LangMessage::SelectedJavaPath => match lang {
+                Lang::English => "Selected Java path:".to_string(),
+                Lang::Russian => "Выбранный путь к Java:".to_string(),
+            },
+            LangMessage::NoJavaPath => match lang {
+                Lang::English => "No Java path selected".to_string(),
+                Lang::Russian => "Путь к Java не выбран".to_string(),
             },
             LangMessage::JavaXMX => match lang {
                 Lang::English => "Java Xmx".to_string(),
@@ -257,10 +244,6 @@ impl LangMessage {
             LangMessage::Running => match lang {
                 Lang::English => "Running...".to_string(),
                 Lang::Russian => "Запущено...".to_string(),
-            },
-            LangMessage::Language => match lang {
-                Lang::English => "Language".to_string(),
-                Lang::Russian => "Язык".to_string(),
             },
             LangMessage::LanguageName => match lang {
                 Lang::English => "English".to_string(),
@@ -315,10 +298,6 @@ impl LangMessage {
                 Lang::English => "Authorization".to_string(),
                 Lang::Russian => "Авторизация".to_string(),
             },
-            LangMessage::Modpacks => match lang {
-                Lang::English => "Modpacks".to_string(),
-                Lang::Russian => "Модпаки".to_string(),
-            },
             LangMessage::ForceOverwrite => match lang {
                 Lang::English => "Overwrite optional files".to_string(),
                 Lang::Russian => "Перезаписать необязательные файлы".to_string(),
@@ -326,10 +305,6 @@ impl LangMessage {
             LangMessage::ForceOverwriteWarning => match lang {
                 Lang::English => "Warning: this may overwrite such files as configs, server list, etc.".to_string(),
                 Lang::Russian => "Внимание: это может перезаписать такие файлы как настройки, список серверов и т.д.".to_string(),
-            },
-            LangMessage::OpenLauncherDirectory => match lang {
-                Lang::English => "Open launcher directory".to_string(),
-                Lang::Russian => "Открыть папку лаунчера".to_string(),
             },
             LangMessage::KillMinecraft => match lang {
                 Lang::English => "Kill Minecraft".to_string(),
@@ -355,6 +330,10 @@ impl LangMessage {
                 Lang::English => "Retry".to_string(),
                 Lang::Russian => "Попробовать снова".to_string(),
             },
+            LangMessage::OpenLogs => match lang {
+                Lang::English => "Open logs folder".to_string(),
+                Lang::Russian => "Открыть папку с логами".to_string(),
+            }
         }
     }
 }

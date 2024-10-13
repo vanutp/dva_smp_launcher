@@ -99,7 +99,7 @@ impl AuthState {
                                 .insert(auth_data.get_id(), version_auth_data.clone());
                             self.runtime_auth
                                 .insert(auth_data.get_id(), version_auth_data);
-                            runtime_config::save_config(config);
+                            config.save();
 
                             self.auth_status = auth_status;
                         }
@@ -193,23 +193,34 @@ impl AuthState {
             _ => {}
         }
 
-        ui.label(
-            match &self.auth_status {
-                AuthStatus::NotAuthorized if self.auth_task.is_none() => {
-                    LangMessage::AuthorizeUsing(auth_provider_name)
-                }
-                AuthStatus::NotAuthorized => LangMessage::Authorizing,
-                AuthStatus::AuthorizeError(e) => LangMessage::AuthError(e.clone()),
-                AuthStatus::AuthorizeErrorOffline => LangMessage::NoConnectionToAuthServer {
-                    offline_username: selected_username.clone(),
-                },
-                AuthStatus::AuthorizeErrorTimeout => LangMessage::AuthTimeout,
-                AuthStatus::Authorized(auth_data) => {
-                    LangMessage::AuthorizedAs(auth_data.user_info.username.clone())
-                }
+        match &self.auth_status {
+            AuthStatus::NotAuthorized if self.auth_task.is_none() => {
+                ui.label(LangMessage::AuthorizeUsing(auth_provider_name).to_string(lang));
             }
-            .to_string(lang),
-        );
+            AuthStatus::NotAuthorized => {
+                ui.label(LangMessage::Authorizing.to_string(lang));
+            }
+            AuthStatus::AuthorizeError(e) => {
+                ui.label(LangMessage::AuthError(e.clone()).to_string(lang));
+            }
+            AuthStatus::AuthorizeErrorOffline => {
+                ui.label(
+                    LangMessage::NoConnectionToAuthServer {
+                        offline_username: selected_username.clone(),
+                    }
+                    .to_string(lang),
+                );
+            }
+            AuthStatus::AuthorizeErrorTimeout => {
+                ui.label(LangMessage::AuthTimeout.to_string(lang));
+            }
+            AuthStatus::Authorized(auth_data) => {
+                ui.label(LangMessage::AuthorizedAs.to_string(lang));
+                let text = egui::RichText::new(&auth_data.user_info.username)
+                    .text_style(egui::TextStyle::Monospace);
+                ui.label(text);
+            }
+        }
 
         if let Some(message) = self.auth_message_provider.get_message() {
             AuthState::render_auth_window(message, lang, ui);
@@ -233,8 +244,9 @@ impl AuthState {
         }
     }
 
-    pub fn ready_for_launch(&self, auth_data: &AuthData) -> bool {
-        self.runtime_auth.contains_key(&auth_data.get_id())
+    pub fn ready_for_launch(&self, auth_data: &AuthData, config: &Config) -> bool {
+        self.runtime_auth.contains_key(&auth_data.get_id()) ||
+            self.auth_status == AuthStatus::AuthorizeErrorOffline && config.get_version_auth_data(auth_data).is_some()
     }
 
     pub fn online(&self) -> bool {

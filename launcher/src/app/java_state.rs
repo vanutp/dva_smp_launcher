@@ -1,4 +1,3 @@
-use egui::Widget as _;
 use shared::paths::get_java_dir;
 use std::path::Path;
 use std::sync::Arc;
@@ -71,8 +70,6 @@ pub struct JavaState {
     java_download_task: Option<BackgroundTask<JavaDownloadResult>>,
     java_download_progress_bar: Arc<GuiProgressBar>,
     settings_opened: bool,
-    picked_java_path: Option<String>,
-    selected_xmx: Option<String>,
 }
 
 impl JavaState {
@@ -87,8 +84,6 @@ impl JavaState {
             java_download_task: None,
             java_download_progress_bar,
             settings_opened: false,
-            picked_java_path: None,
-            selected_xmx: None,
         }
     }
 
@@ -100,12 +95,12 @@ impl JavaState {
         if let Some(java_path) = config.java_paths.get(metadata.get_name()) {
             if !java::check_java(&metadata.get_java_version(), java_path.as_ref()) {
                 config.java_paths.remove(metadata.get_name());
-                runtime_config::save_config(config);
+                config.save();
             }
         }
 
         if config.java_paths.get(metadata.get_name()).is_none() {
-            let launcher_dir = runtime_config::get_launcher_dir(config);
+            let launcher_dir = config.get_launcher_dir();
 
             if let Some(java_installation) =
                 java::get_java(&metadata.get_java_version(), &get_java_dir(&launcher_dir))
@@ -114,7 +109,7 @@ impl JavaState {
                     metadata.get_name().to_string(),
                     java_installation.path.to_str().unwrap().to_string(),
                 );
-                runtime_config::save_config(config);
+                config.save();
             }
         }
     }
@@ -141,7 +136,7 @@ impl JavaState {
         }
 
         if self.status == JavaDownloadStatus::Downloading && self.java_download_task.is_none() {
-            let launcher_dir = runtime_config::get_launcher_dir(config);
+            let launcher_dir = config.get_launcher_dir();
             let java_dir = get_java_dir(&launcher_dir);
 
             self.java_download_progress_bar.reset();
@@ -170,7 +165,7 @@ impl JavaState {
                                     metadata.get_name().to_string(),
                                     path.to_str().unwrap().to_string(),
                                 );
-                                runtime_config::save_config(config);
+                                config.save();
                             } else {
                                 self.status = JavaDownloadStatus::DownloadError(
                                     "Downloaded Java is not valid".to_string(),
@@ -185,19 +180,6 @@ impl JavaState {
                 }
             }
         }
-    }
-
-    fn get_download_button_text(
-        &self,
-        selected_metadata: &CompleteVersionMetadata,
-        config: &runtime_config::Config,
-    ) -> egui::Button {
-        egui::Button::new(
-            LangMessage::DownloadJava {
-                version: selected_metadata.get_java_version().clone(),
-            }
-            .to_string(&config.lang),
-        )
     }
 
     fn is_download_needed(&self) -> bool {
@@ -251,88 +233,6 @@ impl JavaState {
         if self.status == JavaDownloadStatus::Downloading {
             self.java_download_progress_bar.render(ui, &config.lang);
             self.render_cancel_button(ui, &config.lang);
-        }
-
-        if self.is_download_needed() {
-            if self
-                .get_download_button_text(selected_metadata, config)
-                .ui(ui)
-                .clicked()
-            {
-                self.status = JavaDownloadStatus::Downloading;
-            }
-        }
-        if ui
-            .button(LangMessage::JavaSettings.to_string(&config.lang))
-            .clicked()
-        {
-            self.settings_opened = true;
-
-            self.picked_java_path = config
-                .java_paths
-                .get(&selected_metadata.get_name().to_string())
-                .cloned();
-            self.selected_xmx = Some(config.xmx.clone());
-        }
-
-        self.render_settings_window(ui, config, selected_metadata);
-    }
-
-    fn render_settings_window(
-        &mut self,
-        ui: &mut egui::Ui,
-        config: &mut runtime_config::Config,
-        selected_metadata: &CompleteVersionMetadata,
-    ) {
-        let mut update_status = false;
-        egui::Window::new(LangMessage::JavaSettings.to_string(&config.lang))
-            .open(&mut self.settings_opened)
-            .show(ui.ctx(), |ui| {
-                ui.label(
-                    LangMessage::SelectedJavaPath {
-                        path: self.picked_java_path.clone(),
-                    }
-                    .to_string(&config.lang),
-                );
-
-                if ui
-                    .button(LangMessage::SelectJavaPath.to_string(&config.lang))
-                    .clicked()
-                {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                        if java::check_java(&selected_metadata.get_java_version(), &path) {
-                            self.picked_java_path = Some(path.display().to_string());
-                            config.java_paths.insert(
-                                selected_metadata.get_name().to_string(),
-                                path.display().to_string(),
-                            );
-                            runtime_config::save_config(config);
-                            update_status = true;
-                        } else {
-                            self.picked_java_path = None;
-                        }
-                    }
-                }
-
-                ui.label(LangMessage::JavaXMX.to_string(&config.lang));
-                ui.text_edit_singleline(self.selected_xmx.as_mut().unwrap());
-
-                if ui
-                    .button(LangMessage::OpenLauncherDirectory.to_string(&config.lang))
-                    .clicked()
-                {
-                    open::that(runtime_config::get_launcher_dir(config)).unwrap();
-                }
-
-                if utils::validate_xmx(self.selected_xmx.as_ref().unwrap())
-                    && config.xmx != self.selected_xmx.as_ref().unwrap().as_str()
-                {
-                    config.xmx = self.selected_xmx.as_ref().unwrap().clone();
-                    runtime_config::save_config(config);
-                }
-            });
-        if update_status {
-            self.status = JavaDownloadStatus::Downloaded;
         }
     }
 

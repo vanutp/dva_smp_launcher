@@ -102,7 +102,7 @@ impl MetadataState {
         ctx: &egui::Context,
     ) -> bool {
         if self.status == GetStatus::Getting && self.get_task.is_none() {
-            let launcher_dir = runtime_config::get_launcher_dir(config);
+            let launcher_dir = config.get_launcher_dir();
 
             let ctx = ctx.clone();
             self.get_task = Some(get_metadata(
@@ -136,7 +136,7 @@ impl MetadataState {
         false
     }
 
-    pub fn render_ui(&mut self, ui: &mut egui::Ui, config: &runtime_config::Config) {
+    pub fn render_ui(&mut self, ui: &mut egui::Ui, config: &runtime_config::Config) -> bool {
         match self.status {
             GetStatus::Getting => {
                 ui.label(LangMessage::GettingVersionMetadata.to_string(&config.lang));
@@ -155,8 +155,12 @@ impl MetadataState {
                 ui.label(LangMessage::ErrorGettingMetadata(s.clone()).to_string(&config.lang));
                 self.render_retry_button(ui, config);
             }
-            GetStatus::UpToDate => {}
+            GetStatus::UpToDate => {
+                return false;
+            }
         }
+
+        true
     }
 
     fn render_retry_button(&mut self, ui: &mut egui::Ui, config: &runtime_config::Config) {

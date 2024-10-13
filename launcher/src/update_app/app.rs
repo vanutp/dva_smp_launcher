@@ -134,117 +134,122 @@ impl UpdateApp {
 
     fn ui(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            match &self.download_status {
-                DownloadStatus::Downloaded(new_binary) => {
-                    if let Some(e) = replace_launcher_and_start(new_binary).err() {
-                        self.download_status = if utils::is_read_only_error(&e) {
-                            DownloadStatus::ErrorReadOnly
+            ui.vertical_centered(|ui| {
+                match &self.download_status {
+                    DownloadStatus::Downloaded(new_binary) => {
+                        if let Some(e) = replace_launcher_and_start(new_binary).err() {
+                            self.download_status = if utils::is_read_only_error(&e) {
+                                DownloadStatus::ErrorReadOnly
+                            } else {
+                                DownloadStatus::DownloadError(e.to_string())
+                            };
                         } else {
-                            DownloadStatus::DownloadError(e.to_string())
-                        };
-                    } else {
-                        panic!("Launcher should have been replaced and launched");
+                            panic!("Launcher should have been replaced and launched");
+                        }
+                    }
+                    _ => {}
+                }
+
+                if let Some(new_binary_receiver) = &self.new_binary_receiver {
+                    if let Ok(download_status) = new_binary_receiver.try_recv() {
+                        match &download_status {
+                            DownloadStatus::Downloaded(_) => {
+                                ui.label(LangMessage::Launching.to_string(&self.lang));
+                            }
+                            DownloadStatus::DownloadError(_) => {}
+                            DownloadStatus::DownloadErrorOffline(_) => {}
+                            DownloadStatus::NeedDownloading => {
+                                panic!("Should not receive NeedDownloading");
+                            }
+                            DownloadStatus::ErrorReadOnly => {}
+                        }
+                        self.download_status = download_status;
+                    }
+                } else {
+                    if let Ok(update_status) = self.need_update_receiver.try_recv() {
+                        match &update_status {
+                            UpdateStatus::NeedUpdate => {
+                                let (new_binary_sender, new_binary_receiver) = mpsc::channel();
+                                self.new_binary_receiver = Some(new_binary_receiver);
+                                let update_progress_bar = self.update_progress_bar.clone();
+                                let ctx = ctx.clone();
+                                self.runtime.spawn(async move {
+                                    let _ = new_binary_sender.send(
+                                        match download_new_launcher(update_progress_bar).await {
+                                            Ok(new_binary) => {
+                                                DownloadStatus::Downloaded(new_binary)
+                                            }
+                                            Err(e) if utils::is_read_only_error(&e) => {
+                                                DownloadStatus::ErrorReadOnly
+                                            }
+                                            Err(e) if utils::is_connect_error(&e) => {
+                                                DownloadStatus::DownloadErrorOffline(e.to_string())
+                                            }
+                                            Err(e) => DownloadStatus::DownloadError(e.to_string()),
+                                        },
+                                    );
+                                    ctx.request_repaint();
+                                });
+                            }
+                            UpdateStatus::UpToDate => {
+                                self.exit_on_close = false;
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                            UpdateStatus::UpdateError(_) => {}
+                            UpdateStatus::UpdateErrorOffline(_) => {}
+                            UpdateStatus::Checking => {
+                                panic!("Should not receive Checking");
+                            }
+                        }
+                        self.update_status = update_status;
                     }
                 }
-                _ => {}
-            }
 
-            if let Some(new_binary_receiver) = &self.new_binary_receiver {
-                if let Ok(download_status) = new_binary_receiver.try_recv() {
-                    match &download_status {
-                        DownloadStatus::Downloaded(_) => {
-                            ui.label(LangMessage::Launching.to_string(&self.lang));
-                        }
-                        DownloadStatus::DownloadError(_) => {}
-                        DownloadStatus::DownloadErrorOffline(_) => {}
+                match &self.update_status {
+                    UpdateStatus::Checking => {
+                        ui.label(LangMessage::CheckingForUpdates.to_string(&self.lang));
+                    }
+                    UpdateStatus::NeedUpdate => match &self.download_status {
                         DownloadStatus::NeedDownloading => {
-                            panic!("Should not receive NeedDownloading");
+                            self.update_progress_bar.render(ui, &self.lang);
                         }
-                        DownloadStatus::ErrorReadOnly => {}
-                    }
-                    self.download_status = download_status;
-                }
-            } else {
-                if let Ok(update_status) = self.need_update_receiver.try_recv() {
-                    match &update_status {
-                        UpdateStatus::NeedUpdate => {
-                            let (new_binary_sender, new_binary_receiver) = mpsc::channel();
-                            self.new_binary_receiver = Some(new_binary_receiver);
-                            let update_progress_bar = self.update_progress_bar.clone();
-                            let ctx = ctx.clone();
-                            self.runtime.spawn(async move {
-                                let _ = new_binary_sender.send(
-                                    match download_new_launcher(update_progress_bar).await {
-                                        Ok(new_binary) => DownloadStatus::Downloaded(new_binary),
-                                        Err(e) if utils::is_read_only_error(&e) => {
-                                            DownloadStatus::ErrorReadOnly
-                                        }
-                                        Err(e) if utils::is_connect_error(&e) => {
-                                            DownloadStatus::DownloadErrorOffline(e.to_string())
-                                        }
-                                        Err(e) => DownloadStatus::DownloadError(e.to_string()),
-                                    },
-                                );
-                                ctx.request_repaint();
-                            });
+                        DownloadStatus::DownloadError(e) => {
+                            ui.label(
+                                LangMessage::ErrorDownloadingUpdate(e.to_string())
+                                    .to_string(&self.lang),
+                            );
+                            self.render_close_button(ui);
                         }
-                        UpdateStatus::UpToDate => {
-                            self.exit_on_close = false;
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        DownloadStatus::DownloadErrorOffline(e) => {
+                            ui.label(
+                                LangMessage::NoConnectionToUpdateServer(e.to_string())
+                                    .to_string(&self.lang),
+                            );
+                            self.render_close_button(ui);
                         }
-                        UpdateStatus::UpdateError(_) => {}
-                        UpdateStatus::UpdateErrorOffline(_) => {}
-                        UpdateStatus::Checking => {
-                            panic!("Should not receive Checking");
+                        DownloadStatus::Downloaded(_) => {}
+                        DownloadStatus::ErrorReadOnly => {
+                            ui.label(LangMessage::ErrorReadOnly.to_string(&self.lang));
+                            self.render_close_button(ui);
                         }
-                    }
-                    self.update_status = update_status;
-                }
-            }
-
-            match &self.update_status {
-                UpdateStatus::Checking => {
-                    ui.label(LangMessage::CheckingForUpdates.to_string(&self.lang));
-                }
-                UpdateStatus::NeedUpdate => match &self.download_status {
-                    DownloadStatus::NeedDownloading => {
-                        self.update_progress_bar.render(ui, &self.lang);
-                    }
-                    DownloadStatus::DownloadError(e) => {
+                    },
+                    UpdateStatus::UpToDate => {}
+                    UpdateStatus::UpdateError(e) => {
                         ui.label(
-                            LangMessage::ErrorDownloadingUpdate(e.to_string())
+                            LangMessage::ErrorCheckingForUpdates(e.to_string())
                                 .to_string(&self.lang),
                         );
                         self.render_close_button(ui);
                     }
-                    DownloadStatus::DownloadErrorOffline(e) => {
+                    UpdateStatus::UpdateErrorOffline(e) => {
                         ui.label(
                             LangMessage::NoConnectionToUpdateServer(e.to_string())
                                 .to_string(&self.lang),
                         );
                         self.render_close_button(ui);
                     }
-                    DownloadStatus::Downloaded(_) => {}
-                    DownloadStatus::ErrorReadOnly => {
-                        ui.label(LangMessage::ErrorReadOnly.to_string(&self.lang));
-                        self.render_close_button(ui);
-                    }
-                },
-                UpdateStatus::UpToDate => {}
-                UpdateStatus::UpdateError(e) => {
-                    ui.label(
-                        LangMessage::ErrorCheckingForUpdates(e.to_string()).to_string(&self.lang),
-                    );
-                    self.render_close_button(ui);
                 }
-                UpdateStatus::UpdateErrorOffline(e) => {
-                    ui.label(
-                        LangMessage::NoConnectionToUpdateServer(e.to_string())
-                            .to_string(&self.lang),
-                    );
-                    self.render_close_button(ui);
-                }
-            }
+            });
         });
     }
 }

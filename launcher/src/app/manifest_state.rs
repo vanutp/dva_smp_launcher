@@ -89,7 +89,7 @@ impl ManifestState {
         ctx: &egui::Context,
     ) -> bool {
         if self.status == FetchStatus::Fetching && self.fetch_task.is_none() {
-            let launcher_dir = runtime_config::get_launcher_dir(config);
+            let launcher_dir = config.get_launcher_dir();
             let manifest_path = get_manifest_path(&launcher_dir);
 
             let ctx = ctx.clone();
@@ -110,7 +110,7 @@ impl ManifestState {
                         {
                             config.selected_modpack_name =
                                 result.manifest.versions.first().map(|x| x.get_name());
-                            runtime_config::save_config(config);
+                            config.save();
                         }
                         self.manifest = Some(result.manifest);
                     }
@@ -127,26 +127,15 @@ impl ManifestState {
     }
 
     pub fn render_ui(&mut self, ui: &mut egui::Ui, config: &mut runtime_config::Config) -> bool {
-        ui.label(match self.status {
-            FetchStatus::Fetching => LangMessage::FetchingVersionManifest.to_string(&config.lang),
-            FetchStatus::FetchedRemote => {
-                LangMessage::FetchedRemoteManifest.to_string(&config.lang)
-            }
-            FetchStatus::FetchedLocalOffline => {
-                LangMessage::NoConnectionToManifestServer.to_string(&config.lang)
-            }
-            FetchStatus::FetchedLocalRemoteError(ref s) => {
-                LangMessage::ErrorFetchingRemoteManifest(s.clone()).to_string(&config.lang)
-            }
-        });
-
         let mut selected_modpack_name = config.selected_modpack_name.clone();
+
         ui.horizontal(|ui| {
+            ui.label(LangMessage::SelectModpack.to_string(&config.lang));
             egui::ComboBox::from_id_source("modpacks")
                 .selected_text(
                     selected_modpack_name
                         .clone()
-                        .unwrap_or_else(|| LangMessage::SelectModpack.to_string(&config.lang)),
+                        .unwrap_or_else(|| LangMessage::NotSelected.to_string(&config.lang)),
                 )
                 .show_ui(ui, |ui| match self.manifest.as_ref() {
                     Some(r) => {
@@ -164,20 +153,35 @@ impl ManifestState {
                         ui.label(LangMessage::NoModpacks.to_string(&config.lang));
                     }
                 });
-
-            if self.status != FetchStatus::FetchedRemote && self.status != FetchStatus::Fetching {
-                if ui
-                    .button(LangMessage::FetchManifest.to_string(&config.lang))
-                    .clicked()
-                {
-                    self.status = FetchStatus::Fetching;
-                }
-            }
         });
+
+        match self.status {
+            FetchStatus::Fetching => {
+                ui.label(LangMessage::FetchingVersionManifest.to_string(&config.lang));
+            }
+            FetchStatus::FetchedRemote => {}
+            FetchStatus::FetchedLocalOffline => {
+                ui.label(LangMessage::NoConnectionToManifestServer.to_string(&config.lang));
+            }
+            FetchStatus::FetchedLocalRemoteError(ref s) => {
+                ui.label(
+                    LangMessage::ErrorFetchingRemoteManifest(s.clone()).to_string(&config.lang),
+                );
+            }
+        }
+
+        if self.status != FetchStatus::FetchedRemote && self.status != FetchStatus::Fetching {
+            if ui
+                .button(LangMessage::FetchManifest.to_string(&config.lang))
+                .clicked()
+            {
+                self.status = FetchStatus::Fetching;
+            }
+        }
 
         if config.selected_modpack_name != selected_modpack_name {
             config.selected_modpack_name = selected_modpack_name;
-            runtime_config::save_config(config);
+            config.save();
             true
         } else {
             false
