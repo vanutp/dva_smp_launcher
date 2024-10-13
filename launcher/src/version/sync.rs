@@ -275,9 +275,15 @@ pub async fn sync_modpack(
             .get_check_downloads(&assets_dir, version_metadata.get_resources_url_base())?,
     );
 
+    info!(
+        "Got {} check download entries",
+        check_download_entries.len()
+    );
     progress_bar.set_message(LangMessage::CheckingFiles);
     let download_entries =
         files::get_download_entries(check_download_entries, progress_bar.clone()).await?;
+
+    info!("Got {} download entries", download_entries.len());
 
     let libraries_changed = download_entries
         .iter()

@@ -66,9 +66,10 @@ fn merge_two_metadata(
         parent_metadata.arguments.game = arguments.game;
     }
 
-    let parent_id = parent_metadata.id.clone();
-    parent_metadata.hierarchy_ids.push(parent_id);
-    parent_metadata.id = child_metadata.id.clone();
+    parent_metadata
+        .hierarchy_ids
+        .push(child_metadata.id.clone());
+    parent_metadata.id = child_metadata.id;
 
     if let Some(java_version) = child_metadata.java_version {
         parent_metadata.java_version = java_version;

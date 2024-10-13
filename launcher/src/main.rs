@@ -11,16 +11,14 @@ mod update_app;
 mod utils;
 mod version;
 
-use config::runtime_config;
+use config::runtime_config::{self, setup_logger};
+use utils::set_sigint_handler;
 
 fn main() {
-    env_logger::init();
-
-    utils::set_sigint_handler();
+    set_sigint_handler();
+    setup_logger();
 
     let config = runtime_config::load_config();
-
     update_app::app::run_gui(&config);
-
     app::app::run_gui(config);
 }

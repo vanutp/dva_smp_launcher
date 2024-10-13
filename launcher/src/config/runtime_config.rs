@@ -1,7 +1,11 @@
+use env_logger::Builder;
+use log::LevelFilter;
 use serde::{Deserialize, Serialize};
-use shared::version::extra_version_metadata::AuthData;
-use std::collections::HashMap;
+use shared::{paths::get_logs_dir, version::extra_version_metadata::AuthData};
+use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::{collections::HashMap, fs::OpenOptions};
 
 use super::build_config;
 use crate::{auth::base::UserInfo, constants, lang::Lang};
@@ -44,11 +48,52 @@ pub fn get_launcher_dir(config: &Config) -> PathBuf {
     data_dir
 }
 
-fn get_config_path() -> PathBuf {
-    let data_dir = dirs::data_dir().expect("Failed to get data directory");
+fn get_data_dir() -> PathBuf {
+    let data_dir = dirs::data_dir()
+        .expect("Failed to get data directory")
+        .join(build_config::get_data_launcher_name());
+    if !data_dir.exists() {
+        std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+    }
     data_dir
-        .join(build_config::get_data_launcher_name())
-        .join("config.json")
+}
+
+const CONFIG_FILENAME: &str = "config.json";
+
+fn get_config_path() -> PathBuf {
+    get_data_dir().join(CONFIG_FILENAME)
+}
+
+const LOGS_FILENAME: &str = "launcher.log";
+
+fn get_logs_path() -> PathBuf {
+    let logs_dir = get_logs_dir(&get_data_dir());
+    if !logs_dir.exists() {
+        std::fs::create_dir_all(&logs_dir).expect("Failed to create logs directory");
+    }
+    logs_dir.join(LOGS_FILENAME)
+}
+
+pub fn setup_logger() {
+    let log_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(get_logs_path())
+        .unwrap();
+
+    let log_file = Mutex::new(log_file);
+
+    let mut builder = Builder::new();
+    builder.filter(None, LevelFilter::Info);
+
+    builder.format(move |buf, record| {
+        let mut log_file = log_file.lock().unwrap();
+        writeln!(log_file, "{} - {}", record.level(), record.args()).unwrap();
+        writeln!(buf, "{} - {}", record.level(), record.args())
+    });
+
+    builder.init();
 }
 
 pub fn get_assets_dir(config: &Config) -> PathBuf {

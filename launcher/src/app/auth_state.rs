@@ -227,7 +227,7 @@ impl AuthState {
     }
 
     pub fn reset_auth_if_needed(&mut self, new_auth_data: &AuthData) {
-        if self.runtime_auth.contains_key(&new_auth_data.get_id()) {
+        if !self.runtime_auth.contains_key(&new_auth_data.get_id()) {
             self.auth_status = AuthStatus::NotAuthorized;
             self.auth_task = None;
         }
