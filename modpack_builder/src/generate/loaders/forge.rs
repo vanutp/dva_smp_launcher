@@ -102,7 +102,11 @@ impl NeoforgeMavenMetadata {
             .version
             .iter()
             .filter(|&version| version.starts_with(&mc_version_prefix))
-            .max()
+            .max_by(|a, b| {
+                let a_parts: Vec<u32> = a.split(|c: char| !c.is_digit(10)).filter_map(|s| s.parse().ok()).collect();
+                let b_parts: Vec<u32> = b.split(|c: char| !c.is_digit(10)).filter_map(|s| s.parse().ok()).collect();
+                a_parts.cmp(&b_parts)
+            })
             .cloned()
     }
 
