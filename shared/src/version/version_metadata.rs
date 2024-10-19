@@ -137,6 +137,8 @@ impl Library {
             parts.push("");
         }
         let (pkg, name, version, suffix) = (parts[0], parts[1], parts[2], parts[3]);
+        // neoforge adds "@jar" to the version, so we need to remove it
+        let version = version.split("@jar").next().unwrap();
         let pkg_path = pkg.replace('.', "/");
         let suffix = if suffix.is_empty() {
             "".to_string()

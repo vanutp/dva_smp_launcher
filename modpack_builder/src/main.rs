@@ -4,8 +4,9 @@ mod spec;
 mod utils;
 
 use clap::{Arg, Command};
+use shared::logs::setup_logger;
 use spec::VersionsSpec;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::runtime::Runtime;
 
 fn parse_path(v: &str) -> Result<PathBuf, String> {
@@ -17,9 +18,16 @@ fn parse_path(v: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    env_logger::init();
+const LOGS_FILENAME: &str = "builder.log";
 
+pub fn get_logs_path(logs_dir: &Path) -> PathBuf {
+    if !logs_dir.exists() {
+        std::fs::create_dir_all(&logs_dir).expect("Failed to create logs directory");
+    }
+    logs_dir.join(LOGS_FILENAME)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let matches = Command::new("generate-modpack")
         .about("Generates modpacks based on a specification file")
         .arg(
@@ -50,6 +58,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let spec_file_path = spec_file.clone();
     let output_dir_path = output_dir.clone();
     let work_dir_path = work_dir.clone();
+
+    setup_logger(&get_logs_path(&work_dir));
 
     let rt = Runtime::new().unwrap();
     let spec = rt.block_on(VersionsSpec::from_file(&spec_file_path))?;
