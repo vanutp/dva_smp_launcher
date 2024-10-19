@@ -34,6 +34,10 @@ fn sync_paths(from: &Path, to: &Path) -> Result<(), Box<dyn Error + Send + Sync>
             from.to_string_lossy().to_string(),
         )));
     }
+    
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
     if from.is_file() && to.is_dir() {
         // scary
