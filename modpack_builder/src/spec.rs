@@ -15,7 +15,9 @@ use crate::{
     generate::{
         extra::ExtraMetadataGenerator,
         loaders::{
-            fabric::FabricGenerator, forge::ForgeGenerator, generator::VersionGenerator,
+            fabric::FabricGenerator,
+            forge::{ForgeGenerator, Loader},
+            generator::VersionGenerator,
             vanilla::VanillaGenerator,
         },
         manifest::get_version_info,
@@ -114,6 +116,18 @@ impl VersionsSpec {
 
                 "forge" => {
                     generator = Box::new(ForgeGenerator::new(
+                        Loader::Forge,
+                        version.name.clone(),
+                        version.minecraft_version.clone(),
+                        version.loader_version.clone(),
+                        self.download_server_base.clone(),
+                        version.replace_download_urls,
+                    ));
+                }
+
+                "neoforge" => {
+                    generator = Box::new(ForgeGenerator::new(
+                        Loader::Neoforge,
                         version.name.clone(),
                         version.minecraft_version.clone(),
                         version.loader_version.clone(),

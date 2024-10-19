@@ -90,7 +90,7 @@ impl VersionGenerator for FabricGenerator {
         _: &Path,
     ) -> Result<GeneratorResult, Box<dyn Error + Send + Sync>> {
         info!(
-            "Generating fabric modpack \"{}\", minecraft version {}",
+            "Generating Fabric modpack \"{}\", minecraft version {}",
             self.version_name, self.minecraft_version
         );
 
@@ -115,7 +115,7 @@ impl VersionGenerator for FabricGenerator {
             }
         };
 
-        info!("Fetching fabric version metadata");
+        info!("Fetching Fabric version metadata");
         let mut fabric_metadata =
             download_fabric_metadata(&self.minecraft_version, &fabric_version, output_dir).await?;
 
@@ -135,7 +135,7 @@ impl VersionGenerator for FabricGenerator {
             save_version_metadata(&versions_dir, &fabric_metadata).await?;
         }
 
-        info!("Version \"{}\" generated", self.version_name);
+        info!("Fabric version \"{}\" generated", self.version_name);
 
         Ok(GeneratorResult {
             id: fabric_metadata.id.clone(),
