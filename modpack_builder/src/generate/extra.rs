@@ -239,10 +239,6 @@ impl ExtraMetadataGenerator {
             self.version_name
         );
 
-        if self.include_from.is_none() && self.resources_url_base.is_none() {
-            return Ok(());
-        }
-
         let extra_forge_libs = get_extra_forge_libs(
             &self.extra_forge_libs_paths,
             output_dir,

@@ -30,7 +30,6 @@ pub trait AuthProvider {
 pub fn get_auth_provider(auth_data: &AuthData) -> Arc<dyn AuthProvider + Send + Sync> {
     match auth_data {
         AuthData::ElyBy(auth_data) => Arc::new(ElyByAuthProvider::new(
-            &auth_data.app_name,
             &auth_data.client_id,
             &auth_data.client_secret,
         )),

@@ -20,7 +20,6 @@ pub struct TelegramAuthData {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct ElyByAuthData {
-    pub app_name: String,
     pub client_id: String,
     pub client_secret: String,
 }
@@ -30,7 +29,7 @@ pub struct ElyByAuthData {
 pub enum AuthData {
     None,
     Telegram(TelegramAuthData),
-    #[serde(rename = "ely_by")]
+    #[serde(rename = "ely.by")]
     ElyBy(ElyByAuthData),
 }
 
@@ -45,8 +44,8 @@ impl AuthData {
         match self {
             AuthData::Telegram(auth_data) => format!("telegram_{}", auth_data.auth_base_url),
             AuthData::ElyBy(auth_data) => format!(
-                "elyby_{}_{}_{}",
-                auth_data.app_name, auth_data.client_id, auth_data.client_secret
+                "elyby_{}_{}",
+                auth_data.client_id, auth_data.client_secret
             ),
             AuthData::None => "none".to_string(),
         }
