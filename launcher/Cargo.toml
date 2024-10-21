@@ -29,10 +29,13 @@ tar = "0.4.41"
 thiserror = "1.0.63"
 tokio = { version = "1.39.1", features = ["full"] }
 tokio-util = "0.7.12"
-warp = "0.3.7"
 zip = "2.2.0"
 async-trait = "0.1.83"
 log = "0.4.22"
+hyper = { version = "1.5.0", features = ["full"] }
+hyper-util = { version = "0.1.9", features = ["full"] }
+http-body-util = "0.1.2"
+serde_urlencoded = "0.7.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["fileapi", "winbase"] }

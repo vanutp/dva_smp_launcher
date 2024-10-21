@@ -46,7 +46,7 @@ The `spec.json` file is used to define the specifications for generating modpack
 
 - **name**: The name of the version.
 - **minecraft_version**: The Minecraft version for this modpack.
-- **loader_name**: The name of the mod loader (e.g., "vanilla", "fabric", "forge").
+- **loader_name**: The name of the mod loader ("vanilla", "fabric", "forge" or "neoforge"; "vanilla" by default).
 - **loader_version**: The version of the mod loader (optional; latest for fabric and `recommended` for forge if not set).
 - **include**: A list of additional files or directories to include in the modpack (optional; e.g., mods).
 - **include_no_overwrite**: A list of files or directories to include without overwriting existing files (optional; e.g., configs).
@@ -58,4 +58,20 @@ The `spec.json` file is used to define the specifications for generating modpack
 - **exec_before**: A command to execute before processing this version (optional).
 - **exec_after**: A command to execute after processing this version (optional).
 
-[Example](spec.json.example)
+For more details on configuring the `spec.json` file, refer to the [spec.json.example](spec.json.example) file.
+
+# Running Modpack Builder
+
+To build modpacks for the launcher, follow these steps:
+
+1. **Prepare the Configuration**: Ensure that your `spec.json` file is properly configured. You can use the provided [spec.json.example](modpack_builder/spec.json.example) as a reference.
+
+2. **Run the Builder**: Execute the Modpack Builder with the following command:
+
+    ```sh
+    cargo run --release -p modpack_builder -- -s <path to spec.json>
+    ```
+
+This will process the versions specified in your `spec.json` file and generate the modpack files accordingly.
+
+3. **Deploy the Generated Files**: If you have specified any `exec_after_all` commands in your `spec.json`, they will be executed after all versions are processed. You can use this to deploy the generated files, for example, by using `rsync` to upload them to a server.
