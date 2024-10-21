@@ -8,7 +8,9 @@ use hyper_util::rt::TokioIo;
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::net::TcpListener;
+use tokio::time::sleep;
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::{
     error::Error,
     sync::Arc,
@@ -33,6 +35,8 @@ pub enum AuthError {
     MissingAccessToken,
     #[error("Request error")]
     RequestError,
+    #[error("Timeout during authentication")]
+    AuthTimeout,
 }
 
 pub struct ElyByAuthProvider {
@@ -180,9 +184,21 @@ impl AuthProvider for ElyByAuthProvider {
         let redirect_uri = format!("http://localhost:{}/", listener.local_addr()?.port());
         self.print_auth_url(&redirect_uri, message_provider);
 
-        let http = http1::Builder::new();
+        let mut http = http1::Builder::new();
+        http.keep_alive(false);
+
         loop {
-            let (stream, _) = listener.accept().await?;
+            let stream;
+            tokio::select! {
+                _ = sleep(Duration::from_secs(120)) => {
+                    return Err(Box::new(AuthError::AuthTimeout));
+                }
+
+                st = listener.accept() => {
+                    stream = st?.0;
+                }
+            }
+
             let io = TokioIo::new(stream);
 
             let (token_tx, mut token_rx) = mpsc::unbounded_channel();
