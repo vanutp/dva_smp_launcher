@@ -1,8 +1,9 @@
 use log::debug;
 use maplit::hashmap;
 use shared::paths::{
-    get_authlib_injector_path, get_libraries_dir, get_logs_dir, get_minecraft_dir, get_natives_dir,
+    get_client_jar_path, get_instance_dir, get_libraries_dir, get_logs_dir, get_natives_dir,
 };
+use shared::utils::BoxResult;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tokio::process::{Child, Command as TokioCommand};
@@ -10,7 +11,6 @@ use tokio::process::{Child, Command as TokioCommand};
 use crate::auth::base::get_auth_provider;
 use crate::config::runtime_config::Config;
 use crate::version::complete_version_metadata::CompleteVersionMetadata;
-use crate::version::overrides::with_overrides;
 use crate::version::rules;
 
 use shared::version::version_metadata;
@@ -66,10 +66,6 @@ pub enum LaunchError {
     MissingAuthlibInjector,
     #[error("Missing library {0}")]
     MissingLibrary(PathBuf),
-    #[error("Invalid path {0}")]
-    InvalidPath(PathBuf),
-    #[error("No client jar found")]
-    NoClientJar,
     #[error("Java path for version {0} not found")]
     JavaPathNotFound(String),
 }
@@ -78,9 +74,7 @@ pub async fn launch(
     version_metadata: &CompleteVersionMetadata,
     config: &Config,
     online: bool,
-) -> Result<Child, Box<dyn std::error::Error + Send + Sync>> {
-    let base_version_metadata = &version_metadata.base;
-
+) -> BoxResult<Child> {
     let auth_data = version_metadata.get_auth_data();
     let auth_provider = get_auth_provider(auth_data);
 
@@ -91,27 +85,20 @@ pub async fn launch(
     let version_auth_data = version_auth_data.unwrap();
 
     let launcher_dir = config.get_launcher_dir();
-    let mut minecraft_dir = get_minecraft_dir(&launcher_dir, version_metadata.get_name());
-    let libraries_dir = get_libraries_dir(&launcher_dir, version_metadata.get_name());
-    let natives_dir = get_natives_dir(&launcher_dir, version_metadata.get_name());
+    let mut minecraft_dir = get_instance_dir(&launcher_dir, version_metadata.get_name());
+    let libraries_dir = get_libraries_dir(&launcher_dir);
+    let natives_dir = get_natives_dir(&launcher_dir);
 
     let minecraft_dir_short = minecraft_dir.clone();
     if cfg!(windows) {
         minecraft_dir = PathBuf::from(compat::win_get_long_path_name(
-            minecraft_dir_short
-                .to_str()
-                .ok_or(Box::new(LaunchError::InvalidPath(
-                    minecraft_dir_short.clone(),
-                )))?,
+            &minecraft_dir_short.to_string_lossy(),
         )?);
     }
 
     let mut used_library_paths = HashSet::new();
     let mut classpath = vec![];
-    for library in with_overrides(
-        base_version_metadata.get_libraries(),
-        &base_version_metadata.hierarchy_ids,
-    ) {
+    for library in version_metadata.get_libraries_with_overrides() {
         if !rules::library_matches_os(&library) {
             continue;
         }
@@ -121,26 +108,22 @@ pub async fn launch(
             if !path.is_file() {
                 return Err(Box::new(LaunchError::MissingLibrary(path.clone())));
             }
-            let path_str = path
-                .to_str()
-                .ok_or(Box::new(LaunchError::InvalidPath(path.clone())))?;
 
-            if !used_library_paths.contains(path_str) {
+            let path_string = path.to_string_lossy().to_string();
+            if !used_library_paths.contains(&path_string) {
                 // vanilla mojang manifests have duplicates for some reason
-                used_library_paths.insert(path_str.to_string());
-                classpath.push(path_str.to_string());
+                used_library_paths.insert(path_string.clone());
+                classpath.push(path_string);
             }
         }
     }
 
-    classpath.push(
-        version_metadata
-            .get_client_jar_path(&launcher_dir)
-            .ok_or_else(|| LaunchError::NoClientJar)?
-            .to_str()
-            .unwrap()
-            .to_string(),
-    );
+    let client_jar_path = get_client_jar_path(&launcher_dir, version_metadata.get_id());
+    if !client_jar_path.exists() {
+        return Err(Box::new(LaunchError::MissingLibrary(client_jar_path)));
+    }
+
+    classpath.push(client_jar_path.to_string_lossy().to_string());
 
     let mut classpath_str = classpath.join(PATHSEP);
     if cfg!(windows) {
@@ -155,10 +138,10 @@ pub async fn launch(
         "classpath_separator".to_string() => PATHSEP.to_string(),
         "library_directory".to_string() => libraries_dir.to_str().unwrap().to_string(),
         "auth_player_name".to_string() => version_auth_data.user_info.username.clone(),
-        "version_name".to_string() => base_version_metadata.id.clone(),
+        "version_name".to_string() => version_metadata.get_id().to_string(),
         "game_directory".to_string() => minecraft_dir.to_str().unwrap().to_string(),
         "assets_root".to_string() => config.get_assets_dir().to_str().unwrap().to_string(),
-        "assets_index_name".to_string() => base_version_metadata.asset_index.id.clone(),
+        "assets_index_name".to_string() => version_metadata.get_asset_index()?.id.to_string(),
         "auth_uuid".to_string() => version_auth_data.user_info.uuid.replace("-", ""),
         "auth_access_token".to_string() => version_auth_data.token.clone(),
         "clientid".to_string() => "".to_string(),
@@ -186,7 +169,15 @@ pub async fn launch(
 
     if online {
         if let Some(auth_url) = auth_provider.get_auth_url() {
-            let authlib_injector_path = get_authlib_injector_path(&minecraft_dir);
+            let authlib_injector_path = launcher_dir.join(
+                &version_metadata
+                    .get_extra()
+                    .ok_or(LaunchError::MissingAuthlibInjector)?
+                    .authlib_injector
+                    .as_ref()
+                    .ok_or(LaunchError::MissingAuthlibInjector)?
+                    .path,
+            );
             if !authlib_injector_path.exists() {
                 return Err(Box::new(LaunchError::MissingAuthlibInjector));
             }
@@ -201,11 +192,10 @@ pub async fn launch(
         }
     }
 
-    java_options.extend(process_args(
-        &base_version_metadata.arguments.jvm,
-        &variables,
-    ));
-    let minecraft_options = process_args(&base_version_metadata.arguments.game, &variables);
+    let arguments = version_metadata.get_arguments()?;
+
+    java_options.extend(process_args(&arguments.jvm, &variables));
+    let minecraft_options = process_args(&arguments.game, &variables);
 
     let java_path = config
         .java_paths
@@ -216,12 +206,12 @@ pub async fn launch(
         "Launching java {} with arguments {:?}",
         java_path, java_options
     );
-    debug!("Main class: {}", base_version_metadata.main_class);
+    debug!("Main class: {}", version_metadata.get_main_class());
     debug!("Game arguments: {:?}", minecraft_options);
 
     let mut cmd = TokioCommand::new(java_path);
     cmd.args(&java_options)
-        .arg(&base_version_metadata.main_class)
+        .arg(&version_metadata.get_main_class())
         .args(&minecraft_options)
         .current_dir(minecraft_dir_short);
 

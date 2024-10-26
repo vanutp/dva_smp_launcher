@@ -1,4 +1,5 @@
 use shared::paths::get_manifest_path;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -9,7 +10,7 @@ use crate::version::complete_version_metadata::CompleteVersionMetadata;
 use crate::version::sync;
 
 use shared::progress::ProgressBar;
-use shared::version::version_manifest::{self, VersionInfo, VersionManifest};
+use shared::version::version_manifest::{VersionInfo, VersionManifest};
 
 use super::background_task::{BackgroundTask, BackgroundTaskResult};
 use super::progress_bar::GuiProgressBar;
@@ -34,17 +35,22 @@ fn sync_modpack(
     runtime: &Runtime,
     modpack_metadata: Arc<CompleteVersionMetadata>,
     force_overwrite: bool,
-    sync_data: sync::SyncData,
+    launcher_dir: &Path,
+    assets_dir: &Path,
     progress_bar: Arc<dyn ProgressBar<LangMessage>>,
     callback: Box<dyn FnOnce() + Send>,
 ) -> BackgroundTask<ModpackSyncResult> {
+    let launcher_dir = launcher_dir.to_path_buf();
+    let assets_dir = assets_dir.to_path_buf();
+
     let modpack_metadata = modpack_metadata.clone();
     let fut = async move {
         progress_bar.set_message(LangMessage::CheckingFiles);
         let result = sync::sync_modpack(
             &modpack_metadata,
             force_overwrite,
-            sync_data,
+            &launcher_dir,
+            &assets_dir,
             progress_bar.clone(),
         )
         .await;
@@ -85,9 +91,9 @@ impl ModpackSyncState {
             status: ModpackSyncStatus::NotSynced,
             modpack_sync_task: None,
             modpack_sync_progress_bar,
-            local_version_manifest: version_manifest::load_local_version_manifest_safe(
-                &get_manifest_path(&launcher_dir),
-            )
+            local_version_manifest: VersionManifest::read_local_safe(&get_manifest_path(
+                &launcher_dir,
+            ))
             .await,
             modpack_sync_window_open: false,
             force_overwrite_checked: false,
@@ -134,22 +140,15 @@ impl ModpackSyncState {
                 }
 
                 if self.status != ModpackSyncStatus::Synced {
-                    let launcher_dir = config.get_launcher_dir();
-                    let assets_dir = config.get_assets_dir();
-
                     self.modpack_sync_progress_bar.reset();
 
-                    let path_data = sync::SyncData {
-                        launcher_dir,
-                        assets_dir,
-                        version_name: selected_version_info.get_name(),
-                    };
                     let modpack_sync_progress_bar = self.modpack_sync_progress_bar.clone();
                     self.modpack_sync_task = Some(sync_modpack(
                         runtime,
                         selected_version_metadata,
                         force_overwrite,
-                        path_data,
+                        &config.get_launcher_dir(),
+                        &config.get_assets_dir(),
                         self.modpack_sync_progress_bar.clone(),
                         Box::new(move || {
                             modpack_sync_progress_bar.finish();
@@ -182,10 +181,10 @@ impl ModpackSyncState {
 
                     let launcher_dir = config.get_launcher_dir();
 
-                    let _ = runtime.block_on(version_manifest::save_local_version_manifest(
-                        &self.local_version_manifest,
-                        &get_manifest_path(&launcher_dir),
-                    ));
+                    let _ = runtime.block_on(
+                        self.local_version_manifest
+                            .save_to_file(&get_manifest_path(&launcher_dir)),
+                    );
                 }
 
                 if self.status != ModpackSyncStatus::NotSynced {

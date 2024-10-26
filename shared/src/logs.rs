@@ -1,9 +1,9 @@
 use env_logger::Builder;
 use log::LevelFilter;
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
-use std::fs::OpenOptions;
 
 pub fn setup_logger(logs_path: &Path) {
     let log_file = OpenOptions::new()

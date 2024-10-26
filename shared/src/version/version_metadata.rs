@@ -1,15 +1,19 @@
 use std::{
     collections::HashMap,
-    error::Error,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 use tokio::{fs, io::AsyncReadExt as _};
 
-use crate::files::CheckDownloadEntry;
+use crate::{
+    files::{self, CheckEntry},
+    paths::get_metadata_path,
+    progress,
+    utils::BoxResult,
+};
 
-use super::version_manifest::VersionInfo;
+use super::version_manifest::MetadataInfo;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Os {
@@ -53,6 +57,15 @@ pub enum VariableArgument {
     Complex(ComplexArgument),
 }
 
+impl VariableArgument {
+    pub fn get_values(&self) -> Vec<&str> {
+        match self {
+            VariableArgument::Simple(s) => vec![s.as_str()],
+            VariableArgument::Complex(c) => c.value.get_values(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Arguments {
     pub game: Vec<VariableArgument>,
@@ -79,8 +92,8 @@ pub struct Download {
 }
 
 impl Download {
-    pub fn get_check_download_entry(&self, path: &Path) -> CheckDownloadEntry {
-        CheckDownloadEntry {
+    pub fn get_check_download_entry(&self, path: &Path) -> CheckEntry {
+        CheckEntry {
             url: self.url.clone(),
             remote_sha1: Some(self.sha1.clone()),
             path: path.to_path_buf(),
@@ -182,9 +195,9 @@ impl Library {
         None
     }
 
-    fn get_check_download_entry(&self, libraries_dir: &Path) -> Option<CheckDownloadEntry> {
+    fn get_check_download_entry(&self, libraries_dir: &Path) -> Option<CheckEntry> {
         if let Some(url) = &self.url {
-            return Some(CheckDownloadEntry {
+            return Some(CheckEntry {
                 url: format!("{}/{}", url, self.get_path_from_name()),
                 remote_sha1: self.sha1.clone(),
                 path: libraries_dir.join(&self.get_path_from_name()),
@@ -201,13 +214,13 @@ impl Library {
         None
     }
 
-    fn get_natives_check_download_entries(&self, libraries_dir: &Path) -> Vec<CheckDownloadEntry> {
+    fn get_natives_check_download_entries(&self, libraries_dir: &Path) -> Vec<CheckEntry> {
         let mut entries = vec![];
 
         if let Some(downloads) = &self.downloads {
             if let Some(classifiers) = &downloads.classifiers {
                 for (natives_name, download) in classifiers {
-                    entries.push(CheckDownloadEntry {
+                    entries.push(CheckEntry {
                         url: download.url.clone(),
                         remote_sha1: Some(download.sha1.clone()),
                         path: libraries_dir.join(self.get_natives_path(
@@ -223,7 +236,7 @@ impl Library {
         entries
     }
 
-    pub fn get_all_check_download_entries(&self, libraries_dir: &Path) -> Vec<CheckDownloadEntry> {
+    pub fn get_all_check_download_entries(&self, libraries_dir: &Path) -> Vec<CheckEntry> {
         let mut entries = vec![];
         if let Some(entry) = self.get_check_download_entry(libraries_dir) {
             entries.push(entry);
@@ -244,7 +257,7 @@ impl Library {
         &self,
         natives_name: Option<&str>,
         libraries_dir: &Path,
-    ) -> Vec<CheckDownloadEntry> {
+    ) -> Vec<CheckEntry> {
         let mut entries = vec![];
         if let Some(natives_name) = natives_name {
             if let Some(download) = self.get_natives_download(natives_name) {
@@ -339,14 +352,46 @@ lazy_static::lazy_static! {
 }
 
 impl VersionMetadata {
-    pub async fn from_url(url: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub async fn read_local(versions_dir: &Path, version_id: &str) -> BoxResult<Self> {
+        let version_path = get_metadata_path(versions_dir, version_id);
+        let mut file = fs::File::open(version_path).await?;
+        let mut content = String::new();
+        file.read_to_string(&mut content).await?;
+        let metadata = serde_json::from_str(&content)?;
+        Ok(metadata)
+    }
+
+    pub async fn fetch(url: &str) -> BoxResult<Self> {
         let client = reqwest::Client::new();
         let response = client.get(url).send().await?.error_for_status()?;
         let metadata = response.json().await?;
         Ok(metadata)
     }
 
-    pub fn get_arguments(&self) -> Result<Arguments, Box<dyn Error + Send + Sync>> {
+    pub fn get_check_entry(metadata_info: &MetadataInfo, versions_dir: &Path) -> CheckEntry {
+        let url = metadata_info.url.clone();
+        let sha1 = metadata_info.sha1.clone();
+        let path = get_metadata_path(versions_dir, &metadata_info.id);
+        CheckEntry {
+            url,
+            remote_sha1: Some(sha1),
+            path,
+        }
+    }
+
+    pub async fn read_or_download(
+        metadata_info: &MetadataInfo,
+        versions_dir: &Path,
+    ) -> BoxResult<Self> {
+        let check_entry = Self::get_check_entry(metadata_info, versions_dir);
+        let check_entries = vec![check_entry];
+        let download_entries =
+            files::get_download_entries(check_entries, progress::no_progress_bar()).await?;
+        files::download_files(download_entries, progress::no_progress_bar()).await?;
+        Self::read_local(versions_dir, &metadata_info.id).await
+    }
+
+    pub fn get_arguments(&self) -> BoxResult<Arguments> {
         match &self.arguments {
             Some(arguments) => Ok(arguments.clone()),
             None => {
@@ -361,47 +406,11 @@ impl VersionMetadata {
             }
         }
     }
-}
 
-pub fn get_version_metadata_path(versions_dir: &Path, version_id: &str) -> PathBuf {
-    let version_dir = versions_dir.join(version_id);
-    if !version_dir.exists() {
-        std::fs::create_dir_all(&version_dir).expect("Failed to create version directory");
+    pub async fn save(&self, versions_dir: &Path) -> BoxResult<()> {
+        let version_path = get_metadata_path(versions_dir, &self.id);
+        let content = serde_json::to_string(self)?;
+        fs::write(version_path, content).await?;
+        Ok(())
     }
-    version_dir.join(format!("{}.json", version_id))
-}
-
-pub async fn read_version_metadata(
-    versions_dir: &Path,
-    version_id: &str,
-) -> Result<VersionMetadata, Box<dyn Error + Send + Sync>> {
-    let version_path = get_version_metadata_path(versions_dir, version_id);
-    let mut file = fs::File::open(version_path).await?;
-    let mut content = String::new();
-    file.read_to_string(&mut content).await?;
-    let metadata = serde_json::from_str(&content)?;
-    Ok(metadata)
-}
-
-pub async fn save_version_metadata(
-    versions_dir: &Path,
-    metadata: &VersionMetadata,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let version_path = get_version_metadata_path(versions_dir, &metadata.id);
-    let content = serde_json::to_string(metadata)?;
-    fs::write(version_path, content).await?;
-    Ok(())
-}
-
-pub async fn fetch_version_metadata(
-    version_info: &VersionInfo,
-) -> Result<VersionMetadata, Box<dyn Error + Send + Sync>> {
-    let client = reqwest::Client::new();
-    let response = client
-        .get(&version_info.url)
-        .send()
-        .await?
-        .error_for_status()?;
-    let metadata: VersionMetadata = response.json().await?;
-    Ok(metadata)
 }

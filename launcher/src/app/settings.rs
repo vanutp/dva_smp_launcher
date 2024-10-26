@@ -29,12 +29,6 @@ impl SettingsState {
         config: &mut Config,
         selected_metadata: Option<&CompleteVersionMetadata>,
     ) {
-        self.language_selector.render_ui(ui, config);
-
-        if ui.button("📂").clicked() {
-            open::that(config.get_launcher_dir()).unwrap();
-        }
-
         if ui.button("⚙").clicked() {
             self.settings_opened = true;
 
@@ -48,6 +42,12 @@ impl SettingsState {
             };
             self.selected_xmx = Some(config.xmx.clone());
         }
+
+        if ui.button("📂").clicked() {
+            open::that(config.get_launcher_dir()).unwrap();
+        }
+
+        self.language_selector.render_ui(ui, config);
 
         self.render_settings_window(ui, config, selected_metadata);
     }

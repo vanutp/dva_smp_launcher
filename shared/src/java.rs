@@ -17,6 +17,7 @@ use winreg::enums::*;
 use winreg::RegKey;
 
 use crate::progress::ProgressBar;
+use crate::utils::BoxResult;
 
 pub fn get_temp_dir() -> PathBuf {
     let temp_dir = std::env::temp_dir();
@@ -251,21 +252,18 @@ impl std::fmt::Display for JavaDownloadError {
     }
 }
 
-fn get_java_download_params(
-    required_version: &str,
-    archive_type: &str,
-) -> Result<String, JavaDownloadError> {
+fn get_java_download_params(required_version: &str, archive_type: &str) -> BoxResult<String> {
     let arch = match std::env::consts::ARCH {
         "x86_64" | "amd64" => "x64",
         "aarch64" => "aarch64",
-        _ => return Err(JavaDownloadError::UnsupportedArchitecture),
+        _ => return Err(Box::new(JavaDownloadError::UnsupportedArchitecture)),
     };
 
     let os = match std::env::consts::OS {
         "windows" => "windows",
         "linux" => "linux-glibc",
         "macos" => "macos",
-        _ => return Err(JavaDownloadError::UnsupportedOS),
+        _ => return Err(Box::new(JavaDownloadError::UnsupportedOS)),
     };
 
     let params = format!(
@@ -280,7 +278,7 @@ pub async fn download_java<M>(
     required_version: &str,
     java_dir: &Path,
     progress_bar: Arc<dyn ProgressBar<M> + Send + Sync>,
-) -> Result<JavaInstallation, Box<dyn std::error::Error + Send + Sync>> {
+) -> BoxResult<JavaInstallation> {
     let client = Client::new();
 
     for archive_type in ["tar.gz", "zip"] {

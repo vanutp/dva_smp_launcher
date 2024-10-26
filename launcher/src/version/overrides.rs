@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::info;
 use serde::Deserialize;
 use shared::version::version_metadata::{Library, LibraryDownloads, Rule};
 use std::collections::{HashMap, HashSet};
@@ -57,7 +57,7 @@ lazy_static::lazy_static! {
     };
 }
 
-fn with_mojang_patches(libraries: Vec<&Library>) -> Vec<Library> {
+fn with_mojang_patches(libraries: &Vec<Library>) -> Vec<Library> {
     let mut result = vec![];
     for library in libraries {
         let mut library = library.clone();
@@ -92,18 +92,11 @@ fn with_mojang_patches(libraries: Vec<&Library>) -> Vec<Library> {
     result
 }
 
-pub fn with_overrides(libraries: Vec<&Library>, version_ids: &Vec<String>) -> Vec<Library> {
-    let mut main_version = None;
-    for version_id in version_ids {
-        if let Some(version_match) = LWJGL_VERSION_MATCHES.get(version_id) {
-            if main_version.is_some() {
-                warn!("Multiple main lwjgl versions found");
-            }
-            info!("Found main lwjgl version: {}", version_match);
-            main_version = Some(version_match.clone());
-        }
-    }
-    if main_version.is_none() {
+pub fn with_overrides(libraries: &Vec<Library>, version_id: &str) -> Vec<Library> {
+    let main_version = LWJGL_VERSION_MATCHES.get(version_id);
+    if let Some(main_version) = main_version {
+        info!("Found main lwjgl version: {}", main_version);
+    } else {
         info!("No main lwjgl version found");
     }
 
@@ -121,7 +114,7 @@ pub fn with_overrides(libraries: Vec<&Library>, version_ids: &Vec<String>) -> Ve
         }
 
         for override_ in &LIBRARY_OVERRIDES.overrides {
-            if override_.version == main_version {
+            if &override_.version == main_version {
                 info!("Adding override libraries for version {}", main_version);
                 result.extend(override_.libraries.clone());
             }

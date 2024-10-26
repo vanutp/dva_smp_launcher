@@ -1,10 +1,14 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use log::{debug, info};
 use shared::{
-    files::{download_files, get_download_entries, CheckDownloadEntry},
+    files::{download_files, get_download_entries, CheckEntry},
     paths::{get_client_jar_path, get_libraries_dir},
     progress::ProgressBar,
+    utils::BoxResult,
     version::{asset_metadata::AssetsMetadata, version_metadata::VersionMetadata},
 };
 
@@ -13,7 +17,7 @@ use crate::{progress::TerminalProgressBar, utils::get_assets_dir};
 pub fn get_libraries_check_downloads(
     version_metadata: &VersionMetadata,
     libraries_dir: &Path,
-) -> Vec<CheckDownloadEntry> {
+) -> Vec<CheckEntry> {
     let mut entries = vec![];
     for library in &version_metadata.libraries {
         entries.extend(library.get_all_check_download_entries(libraries_dir));
@@ -25,10 +29,10 @@ pub fn get_libraries_check_downloads(
 fn get_client_download_entry(
     version_metadata: &VersionMetadata,
     data_dir: &Path,
-) -> Option<CheckDownloadEntry> {
+) -> Option<CheckEntry> {
     let client_download = version_metadata.downloads.as_ref()?.client.as_ref()?;
 
-    Some(CheckDownloadEntry {
+    Some(CheckEntry {
         url: client_download.url.clone(),
         remote_sha1: Some(client_download.sha1.clone()),
         path: get_client_jar_path(data_dir, &version_metadata.id),
@@ -37,23 +41,23 @@ fn get_client_download_entry(
 
 const RESOURCES_URL_BASE: &str = "https://resources.download.minecraft.net";
 
+pub struct SyncResult {
+    pub paths_to_copy: Vec<PathBuf>,
+}
+
 pub async fn sync_version(
     version_metadata: &VersionMetadata,
-    version_name: &str,
     output_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let libraries_dir = get_libraries_dir(output_dir, version_name);
+) -> BoxResult<SyncResult> {
+    let libraries_dir = get_libraries_dir(output_dir);
     let mut check_entries = get_libraries_check_downloads(version_metadata, &libraries_dir);
     info!("Got {} libraries to check", check_entries.len());
 
     if let Some(asset_index) = &version_metadata.asset_index {
         let assets_dir = get_assets_dir(output_dir);
-        let assets_metadata = AssetsMetadata::read_or_fetch(asset_index, &assets_dir).await?;
+        let assets_metadata = AssetsMetadata::read_or_download(asset_index, &assets_dir).await?;
         let asset_check_entries =
-            assets_metadata.get_check_downloads(&assets_dir, RESOURCES_URL_BASE)?;
-        assets_metadata
-            .save_to_file(&asset_index.id, &assets_dir)
-            .await?;
+            assets_metadata.get_check_entries(&assets_dir, RESOURCES_URL_BASE)?;
 
         let mut already_have = 0;
         for entry in &asset_check_entries {
@@ -77,6 +81,11 @@ pub async fn sync_version(
 
     let progress_bar = Arc::new(TerminalProgressBar::new());
 
+    let all_paths = check_entries
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+
     progress_bar.set_message("Checking files...");
     let download_entries = get_download_entries(check_entries, progress_bar.clone()).await?;
 
@@ -84,5 +93,7 @@ pub async fn sync_version(
     progress_bar.set_message("Downloading files...");
     download_files(download_entries, progress_bar).await?;
 
-    Ok(())
+    Ok(SyncResult {
+        paths_to_copy: all_paths,
+    })
 }

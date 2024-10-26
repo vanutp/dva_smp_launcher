@@ -3,12 +3,8 @@ use std::{path::Path, sync::Arc};
 use shared::version::version_manifest::VersionInfo;
 
 use crate::{
-    config::runtime_config,
-    lang::LangMessage,
-    version::complete_version_metadata::{
-        get_complete_version_metadata, read_local_complete_version_metadata,
-        CompleteVersionMetadata,
-    },
+    config::runtime_config, lang::LangMessage,
+    version::complete_version_metadata::CompleteVersionMetadata,
 };
 
 use super::background_task::{BackgroundTask, BackgroundTaskResult};
@@ -40,7 +36,7 @@ where
     let data_dir = data_dir.to_path_buf();
 
     let fut = async move {
-        let result = get_complete_version_metadata(&version_info, &data_dir).await;
+        let result = CompleteVersionMetadata::read_or_download(&version_info, &data_dir).await;
         match result {
             Ok(metadata) => MetadataFetchResult {
                 status: GetStatus::UpToDate,
@@ -55,7 +51,7 @@ where
                 }
 
                 let local_metadata =
-                    read_local_complete_version_metadata(&version_info, &data_dir).await;
+                    CompleteVersionMetadata::read_local(&version_info, &data_dir).await;
                 MetadataFetchResult {
                     status: if connect_error {
                         GetStatus::ReadLocalOffline

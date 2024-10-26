@@ -2,63 +2,57 @@ use std::path::Path;
 
 use shared::{
     files::hash_file,
-    paths::{get_versions_dir, get_versions_extra_dir},
+    paths::{
+        get_rel_extra_metadata_path, get_rel_metadata_path, get_rel_versions_dir,
+        get_rel_versions_extra_dir,
+    },
+    utils::BoxResult,
     version::{
-        extra_version_metadata::get_extra_version_metadata_path,
         version_manifest::{MetadataInfo, VersionInfo},
-        version_metadata::{get_version_metadata_path, read_version_metadata},
+        version_metadata::VersionMetadata,
     },
 };
 
-use crate::utils::get_url_from_path;
+use crate::utils::url_from_rel_path;
 
 pub async fn get_version_info(
-    output_dir: &Path,
-    version_id: &str,
+    work_dir: &Path,
+    version_metadata: &Vec<VersionMetadata>,
     version_name: &str,
     download_server_base: &str,
-) -> Result<VersionInfo, Box<dyn std::error::Error + Send + Sync>> {
-    let versions_dir = get_versions_dir(output_dir);
-
-    let version_path = get_version_metadata_path(&versions_dir, version_id);
-
-    let mut inherits_from = vec![];
-    let mut id = version_id.to_string();
-    loop {
-        let version_metadata = read_version_metadata(&versions_dir, &id).await?;
-        if let Some(new_id) = version_metadata.inherits_from {
-            id = new_id;
-            let version_path = get_version_metadata_path(&versions_dir, &id);
-            inherits_from.push(MetadataInfo {
-                id: id.clone(),
-                url: get_url_from_path(&version_path, output_dir, download_server_base)?,
-                sha1: hash_file(&version_path).await?,
-            });
-        } else {
-            break;
-        }
+) -> BoxResult<VersionInfo> {
+    let rel_versions_dir = get_rel_versions_dir();
+    let mut metadata_info = vec![];
+    for metadata in version_metadata {
+        let rel_metadata_path = rel_versions_dir.join(get_rel_metadata_path(&metadata.id));
+        metadata_info.push(MetadataInfo {
+            id: metadata.id.clone(),
+            url: url_from_rel_path(&rel_metadata_path, download_server_base)?,
+            sha1: hash_file(&work_dir.join(&rel_metadata_path)).await?,
+        });
     }
 
-    let versions_extra_dir = get_versions_extra_dir(output_dir);
-    let extra_metadata_path = get_extra_version_metadata_path(&versions_extra_dir, version_name);
+    let rel_extra_metadata_path =
+        get_rel_versions_extra_dir().join(get_rel_extra_metadata_path(version_name));
+    let extra_metadata_path = work_dir.join(&rel_extra_metadata_path);
 
     let mut extra_metadata_url = None;
     let mut extra_metadata_sha1 = None;
     if extra_metadata_path.exists() {
-        extra_metadata_url = Some(get_url_from_path(
-            &extra_metadata_path,
-            output_dir,
+        extra_metadata_url = Some(url_from_rel_path(
+            &rel_extra_metadata_path,
             download_server_base,
         )?);
         extra_metadata_sha1 = Some(hash_file(&extra_metadata_path).await?);
     }
 
+    let child_metadata_info = metadata_info.pop().ok_or("No child metadata")?;
     Ok(VersionInfo {
-        id: version_id.to_string(),
-        url: get_url_from_path(&version_path, output_dir, download_server_base)?,
-        sha1: hash_file(&version_path).await?,
+        id: child_metadata_info.id,
+        url: child_metadata_info.url,
+        sha1: child_metadata_info.sha1,
         name: Some(version_name.to_string()),
-        inherits_from,
+        inherits_from: metadata_info,
         extra_metadata_url,
         extra_metadata_sha1,
     })

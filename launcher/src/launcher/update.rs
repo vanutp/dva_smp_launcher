@@ -1,6 +1,6 @@
 use futures::StreamExt as _;
 use reqwest::Client;
-use std::error::Error;
+use shared::utils::BoxResult;
 use std::process::Command;
 use std::sync::Arc;
 use std::{env, fs};
@@ -49,7 +49,7 @@ pub enum UpdateError {
     AutoUpdateUrlNotSet,
 }
 
-async fn fetch_new_version() -> Result<String, Box<dyn Error + Send + Sync>> {
+async fn fetch_new_version() -> BoxResult<String> {
     if let Some(version_url) = &*VERSION_URL {
         let client = Client::new();
         let response = client.get(version_url).send().await?.error_for_status()?;
@@ -60,7 +60,7 @@ async fn fetch_new_version() -> Result<String, Box<dyn Error + Send + Sync>> {
     }
 }
 
-pub async fn need_update() -> Result<bool, Box<dyn Error + Send + Sync>> {
+pub async fn need_update() -> BoxResult<bool> {
     let new_version = fetch_new_version().await?;
     let current_version = build_config::get_version().expect("Version not set");
     Ok(new_version != current_version)
@@ -68,7 +68,7 @@ pub async fn need_update() -> Result<bool, Box<dyn Error + Send + Sync>> {
 
 pub async fn download_new_launcher(
     progress_bar: Arc<dyn ProgressBar<LangMessage> + Send + Sync>,
-) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<Vec<u8>> {
     if UPDATE_URL.is_none() {
         return Err(Box::new(UpdateError::AutoUpdateUrlNotSet));
     }
@@ -111,7 +111,7 @@ fn unarchive_tar_gz(archive_data: &[u8], dest_dir: &std::path::Path) -> std::io:
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn replace_launcher_and_start(new_binary: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn replace_launcher_and_start(new_binary: &[u8]) -> BoxResult<()> {
     let current_exe = env::current_exe()?;
 
     let new_exe = utils::get_temp_dir().join("new_launcher");
@@ -125,7 +125,7 @@ pub fn replace_launcher_and_start(new_binary: &[u8]) -> Result<(), Box<dyn Error
 }
 
 #[cfg(target_os = "macos")]
-pub fn replace_launcher_and_start(new_archive: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn replace_launcher_and_start(new_archive: &[u8]) -> BoxResult<()> {
     let current_exe = env::current_exe()?;
     let current_dir = current_exe
         .parent()

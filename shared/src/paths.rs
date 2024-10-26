@@ -1,92 +1,112 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-pub fn get_modpacks_dir(data_dir: &Path) -> PathBuf {
-    let modpacks_dir = data_dir.join("modpacks");
-    if !modpacks_dir.exists() {
-        std::fs::create_dir_all(&modpacks_dir).expect("Failed to create modpacks directory");
-    }
-    modpacks_dir
+fn created(dir: PathBuf) -> PathBuf {
+    fs::create_dir_all(&dir).expect("Failed to create directory");
+    dir
 }
 
-pub fn get_minecraft_dir(data_dir: &Path, version_name: &str) -> PathBuf {
-    let version_dir = get_modpacks_dir(data_dir).join(version_name);
-    if !version_dir.exists() {
-        std::fs::create_dir_all(&version_dir).expect("Failed to create minecraft directory");
+fn parent_created(file: PathBuf) -> PathBuf {
+    created(file.parent().unwrap().to_path_buf());
+    file
+}
+
+pub fn get_rel_instances_dir() -> PathBuf {
+    PathBuf::from("instances")
+}
+
+pub fn get_instances_dir(data_dir: &Path) -> PathBuf {
+    let old_instances_dir = data_dir.join("modpacks");
+    let instances_dir = data_dir.join(get_rel_instances_dir());
+    if old_instances_dir.exists() && !instances_dir.exists() {
+        fs::rename(old_instances_dir, &instances_dir).expect("Failed to rename modpacks directory");
     }
-    version_dir
+    created(instances_dir)
+}
+
+pub fn get_rel_instance_dir(version_name: &str) -> PathBuf {
+    get_rel_instances_dir().join(version_name)
+}
+
+pub fn get_instance_dir(data_dir: &Path, version_name: &str) -> PathBuf {
+    let old_instances_dir = data_dir.join("modpacks");
+    let instances_dir = data_dir.join(get_rel_instances_dir());
+    if old_instances_dir.exists() && !instances_dir.exists() {
+        fs::rename(old_instances_dir, &instances_dir).expect("Failed to rename modpacks directory");
+    }
+    created(data_dir.join(get_rel_instance_dir(version_name)))
 }
 
 pub fn get_manifest_path(data_dir: &Path) -> PathBuf {
-    get_modpacks_dir(data_dir).join("version_manifest.json")
+    parent_created(data_dir.join("version_manifest.json"))
 }
 
 pub fn get_java_dir(data_dir: &Path) -> PathBuf {
-    let java_dir = data_dir.join("java");
-    if !java_dir.exists() {
-        std::fs::create_dir_all(&java_dir).expect("Failed to create java directory");
-    }
-    java_dir
+    created(data_dir.join("java"))
 }
 
 pub fn get_logs_dir(data_dir: &Path) -> PathBuf {
-    let logs_dir = data_dir.join("logs");
-    if !logs_dir.exists() {
-        std::fs::create_dir_all(&logs_dir).expect("Failed to create logs directory");
-    }
-    logs_dir
+    created(data_dir.join("logs"))
 }
 
-pub fn get_libraries_dir(data_dir: &Path, version_name: &str) -> PathBuf {
-    let libraries_dir = get_minecraft_dir(data_dir, version_name).join("libraries");
-    if !libraries_dir.exists() {
-        std::fs::create_dir_all(&libraries_dir).expect("Failed to create libraries directory");
-    }
-    libraries_dir
+pub fn get_libraries_dir(data_dir: &Path) -> PathBuf {
+    created(data_dir.join("libraries"))
 }
 
-pub fn get_natives_dir(data_dir: &Path, version_name: &str) -> PathBuf {
-    let natives_dir = get_minecraft_dir(data_dir, version_name).join("natives");
-    if !natives_dir.exists() {
-        std::fs::create_dir_all(&natives_dir).expect("Failed to create natives directory");
-    }
-    natives_dir
+pub fn get_natives_dir(data_dir: &Path) -> PathBuf {
+    created(data_dir.join("natives"))
+}
+
+pub fn get_rel_versions_dir() -> PathBuf {
+    PathBuf::from("versions")
 }
 
 pub fn get_versions_dir(data_dir: &Path) -> PathBuf {
-    let versions_dir = get_modpacks_dir(data_dir).join("versions");
-    if !versions_dir.exists() {
-        std::fs::create_dir_all(&versions_dir).expect("Failed to create versions directory");
-    }
-    versions_dir
+    created(data_dir.join(get_rel_versions_dir()))
+}
+
+pub fn get_rel_metadata_path(version_id: &str) -> PathBuf {
+    PathBuf::from(version_id).join(format!("{}.json", version_id))
+}
+
+pub fn get_metadata_path(versions_dir: &Path, version_id: &str) -> PathBuf {
+    parent_created(versions_dir.join(get_rel_metadata_path(version_id)))
 }
 
 pub fn get_client_jar_path(data_dir: &Path, id: &str) -> PathBuf {
-    let version_dir = get_versions_dir(data_dir).join(id);
-    if !version_dir.exists() {
-        std::fs::create_dir_all(&version_dir).expect("Failed to create version directory");
-    }
-    version_dir.join(format!("{}.jar", id))
+    parent_created(
+        get_versions_dir(data_dir)
+            .join(id)
+            .join(format!("{}.jar", id)),
+    )
+}
+
+pub fn get_rel_versions_extra_dir() -> PathBuf {
+    PathBuf::from("versions_extra")
 }
 
 pub fn get_versions_extra_dir(data_dir: &Path) -> PathBuf {
-    let versions_extra_dir = get_modpacks_dir(data_dir).join("versions_extra");
-    if !versions_extra_dir.exists() {
-        std::fs::create_dir_all(&versions_extra_dir)
-            .expect("Failed to create versions_extra directory");
-    }
-    versions_extra_dir
+    created(data_dir.join(get_rel_versions_extra_dir()))
+}
+
+pub fn get_rel_extra_metadata_path(version_name: &str) -> PathBuf {
+    PathBuf::from(format!("{}.json", version_name))
+}
+
+pub fn get_extra_metadata_path(versions_extra_dir: &Path, version_name: &str) -> PathBuf {
+    parent_created(versions_extra_dir.join(get_rel_extra_metadata_path(version_name)))
 }
 
 pub fn get_asset_index_path(assets_dir: &Path, asset_index: &str) -> PathBuf {
-    let asset_index_dir = assets_dir.join("indexes");
-    if !asset_index_dir.exists() {
-        std::fs::create_dir_all(&asset_index_dir).expect("Failed to create asset index directory");
-    }
-    asset_index_dir.join(format!("{}.json", asset_index))
+    parent_created(
+        assets_dir
+            .join("indexes")
+            .join(format!("{}.json", asset_index)),
+    )
 }
 
-const AUTHLIB_INJECTOR_FILENAME: &str = "authlib-injector.jar";
-
-pub fn get_authlib_injector_path(minecraft_dir: &Path) -> PathBuf {
-    minecraft_dir.join(AUTHLIB_INJECTOR_FILENAME)
+pub fn get_assets_object_path(assets_dir: &Path) -> PathBuf {
+    created(assets_dir.join("objects"))
 }

@@ -1,10 +1,10 @@
-use std::{
-    error::Error,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use log::info;
-use shared::version::version_manifest::{fetch_version_manifest, VersionInfo};
+use shared::{
+    utils::BoxResult,
+    version::version_manifest::{VersionInfo, VersionManifest},
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum VanillaGeneratorError {
@@ -15,10 +15,10 @@ pub enum VanillaGeneratorError {
 pub const VANILLA_MANIFEST_URL: &str =
     "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
-pub async fn get_vanilla_version_info(
+pub fn get_vanilla_version_info(
+    version_manifest: &VersionManifest,
     minecraft_version: &str,
-) -> Result<VersionInfo, Box<dyn Error + Send + Sync>> {
-    let version_manifest = fetch_version_manifest(VANILLA_MANIFEST_URL).await?;
+) -> BoxResult<VersionInfo> {
     let version_info = version_manifest
         .versions
         .iter()
@@ -27,14 +27,11 @@ pub async fn get_vanilla_version_info(
     Ok(version_info.clone())
 }
 
-pub async fn exec_custom_command(command: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn exec_custom_command(command: &str) -> BoxResult<()> {
     exec_custom_command_in_dir(command, &Path::new(".")).await
 }
 
-pub async fn exec_custom_command_in_dir(
-    command: &str,
-    dir: &Path,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn exec_custom_command_in_dir(command: &str, dir: &Path) -> BoxResult<()> {
     info!("Executing command: {}", command);
     let mut cmd = tokio::process::Command::new("bash");
     cmd.args(vec!["-c", command]).current_dir(dir);
@@ -48,16 +45,21 @@ pub async fn exec_custom_command_in_dir(
     Ok(())
 }
 
-pub fn get_url_from_path(
-    path: &Path,
-    base_dir: &Path,
-    download_server_base: &str,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+pub fn url_from_rel_path(rel_path: &Path, download_server_base: &str) -> BoxResult<String> {
     Ok(format!(
         "{}/{}",
         download_server_base,
-        path.strip_prefix(base_dir)?.to_string_lossy()
+        rel_path.to_string_lossy()
     ))
+}
+
+pub fn url_from_path(
+    path: &Path,
+    base_dir: &Path,
+    download_server_base: &str,
+) -> BoxResult<String> {
+    let rel_path = path.strip_prefix(base_dir)?;
+    url_from_rel_path(rel_path, download_server_base)
 }
 
 pub fn get_assets_dir(output_dir: &Path) -> PathBuf {
@@ -68,6 +70,14 @@ pub fn get_assets_dir(output_dir: &Path) -> PathBuf {
     assets_dir
 }
 
-pub fn to_abs_path_str(path: &Path) -> Result<String, Box<dyn Error + Send + Sync>> {
+pub fn to_abs_path_str(path: &Path) -> BoxResult<String> {
     Ok(path.canonicalize()?.to_string_lossy().to_string())
+}
+
+pub fn get_replaced_metadata_dir(output_dir: &Path) -> PathBuf {
+    let replaced_manifests_dir = output_dir.join("versions_replaced");
+    if !replaced_manifests_dir.exists() {
+        std::fs::create_dir_all(&replaced_manifests_dir).unwrap();
+    }
+    replaced_manifests_dir
 }

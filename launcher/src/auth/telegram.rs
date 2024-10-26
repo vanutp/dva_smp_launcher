@@ -5,7 +5,7 @@ use super::base::{AuthProvider, UserInfo};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
-use std::error::Error;
+use shared::utils::BoxResult;
 use std::sync::Arc;
 use std::{collections::HashMap, time::Duration};
 
@@ -33,7 +33,7 @@ impl TGAuthProvider {
         }
     }
 
-    async fn get_bot_name(&self) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn get_bot_name(&self) -> BoxResult<String> {
         let body = self
             .client
             .get(format!("{}/info", self.base_url))
@@ -49,10 +49,7 @@ impl TGAuthProvider {
 
 #[async_trait]
 impl AuthProvider for TGAuthProvider {
-    async fn authenticate(
-        &self,
-        message_provider: Arc<dyn MessageProvider>,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn authenticate(&self, message_provider: Arc<dyn MessageProvider>) -> BoxResult<String> {
         let bot_name = self.get_bot_name().await?;
         let body = self
             .client
@@ -109,7 +106,7 @@ impl AuthProvider for TGAuthProvider {
         Ok(access_token)
     }
 
-    async fn get_user_info(&self, token: &str) -> Result<UserInfo, Box<dyn Error + Send + Sync>> {
+    async fn get_user_info(&self, token: &str) -> BoxResult<UserInfo> {
         let resp = self
             .client
             .get(format!("{}/login/profile", self.base_url))

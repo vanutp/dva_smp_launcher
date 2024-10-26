@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use shared::{paths::get_logs_dir, version::extra_version_metadata::AuthData};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use super::build_config;
 use crate::{auth::base::UserInfo, constants, lang::Lang};

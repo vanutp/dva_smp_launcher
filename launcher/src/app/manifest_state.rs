@@ -7,9 +7,7 @@ use crate::{
 
 use shared::{
     paths::get_manifest_path,
-    version::version_manifest::{
-        fetch_version_manifest, load_local_version_manifest_safe, VersionInfo, VersionManifest,
-    },
+    version::version_manifest::{VersionInfo, VersionManifest},
 };
 
 use super::background_task::{BackgroundTask, BackgroundTaskResult};
@@ -38,7 +36,7 @@ where
     let manifest_path = manifest_path.to_path_buf();
 
     let fut = async move {
-        let result = fetch_version_manifest(&build_config::get_version_manifest_url()).await;
+        let result = VersionManifest::fetch(&build_config::get_version_manifest_url()).await;
         match result {
             Ok(manifest) => ManifestFetchResult {
                 status: FetchStatus::FetchedRemote,
@@ -58,7 +56,7 @@ where
                     } else {
                         FetchStatus::FetchedLocalRemoteError(e.to_string())
                     },
-                    manifest: load_local_version_manifest_safe(&manifest_path).await,
+                    manifest: VersionManifest::read_local_safe(&manifest_path).await,
                 }
             }
         }

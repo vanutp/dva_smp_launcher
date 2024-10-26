@@ -4,8 +4,10 @@ use std::{
 };
 
 use crate::{
-    files::{self, CheckDownloadEntry},
+    files::{self, CheckEntry},
     paths::get_asset_index_path,
+    progress,
+    utils::BoxResult,
     version::version_metadata::AssetIndex,
 };
 use reqwest::Client;
@@ -22,62 +24,48 @@ pub struct AssetsMetadata {
 }
 
 impl AssetsMetadata {
-    pub async fn fetch(
-        url: &str,
-    ) -> Result<AssetsMetadata, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn fetch(url: &str) -> BoxResult<Self> {
         let client = Client::new();
         let response = client.get(url).send().await?.json().await?;
         Ok(response)
     }
 
-    async fn get_path(assets_dir: &Path, asset_id: &str) -> Result<PathBuf, std::io::Error> {
+    pub async fn get_path(assets_dir: &Path, asset_id: &str) -> BoxResult<PathBuf> {
         tokio::fs::create_dir_all(assets_dir.join("indexes")).await?;
         Ok(assets_dir
             .join("indexes")
             .join(format!("{}.json", asset_id)))
     }
 
-    pub async fn read(
-        asset_id: &str,
-        assets_dir: &Path,
-    ) -> Result<AssetsMetadata, Box<dyn std::error::Error + Send + Sync>> {
-        let data = tokio::fs::read(AssetsMetadata::get_path(&assets_dir, asset_id).await?).await?;
-        let data: AssetsMetadata = serde_json::from_slice(&data)?;
+    pub async fn read_local(asset_id: &str, assets_dir: &Path) -> BoxResult<Self> {
+        let data = tokio::fs::read(Self::get_path(&assets_dir, asset_id).await?).await?;
+        let data: Self = serde_json::from_slice(&data)?;
         Ok(data)
     }
 
-    pub async fn read_or_fetch(
-        asset_index: &AssetIndex,
-        assets_dir: &Path,
-    ) -> Result<AssetsMetadata, Box<dyn std::error::Error + Send + Sync>> {
-        let mut needed_index_download = false;
-
+    pub async fn read_or_download(asset_index: &AssetIndex, assets_dir: &Path) -> BoxResult<Self> {
         let asset_index_path = get_asset_index_path(assets_dir, &asset_index.id);
-        if !asset_index_path.exists() {
-            needed_index_download = true;
-        } else {
-            let local_asset_index_hash = files::hash_file(&asset_index_path).await?;
-            if local_asset_index_hash != asset_index.sha1 {
-                needed_index_download = true;
-            }
-        }
-
-        Ok(if needed_index_download {
-            AssetsMetadata::fetch(&asset_index.url).await?
-        } else {
-            AssetsMetadata::read(&asset_index.id, &assets_dir).await?
-        })
+        let check_entry = CheckEntry {
+            url: asset_index.url.clone(),
+            remote_sha1: Some(asset_index.sha1.clone()),
+            path: asset_index_path.clone(),
+        };
+        let check_entries = vec![check_entry];
+        let download_entries =
+            files::get_download_entries(check_entries, progress::no_progress_bar()).await?;
+        files::download_files(download_entries, progress::no_progress_bar()).await?;
+        Self::read_local(&asset_index.id, &assets_dir).await
     }
 
-    pub fn get_check_downloads(
+    pub fn get_check_entries(
         &self,
         assets_dir: &Path,
         resources_url_base: &str,
-    ) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> BoxResult<Vec<CheckEntry>> {
         let mut download_entries = vec![];
 
         download_entries.extend(self.objects.iter().map(|(_, object)| {
-            CheckDownloadEntry {
+            CheckEntry {
                 url: format!(
                     "{}/{}/{}",
                     resources_url_base,
@@ -95,13 +83,9 @@ impl AssetsMetadata {
         Ok(download_entries)
     }
 
-    pub async fn save_to_file(
-        &self,
-        asset_id: &str,
-        assets_dir: &Path,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn save_to_file(&self, asset_id: &str, assets_dir: &Path) -> BoxResult<()> {
         let data = serde_json::to_vec(self)?;
-        tokio::fs::write(AssetsMetadata::get_path(&assets_dir, asset_id).await?, data).await?;
+        tokio::fs::write(Self::get_path(&assets_dir, asset_id).await?, data).await?;
         Ok(())
     }
 }

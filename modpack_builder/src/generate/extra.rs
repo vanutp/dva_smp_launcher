@@ -1,99 +1,83 @@
 use std::{
-    error::Error,
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use fs_extra::{dir, file};
-use log::{error, info};
+use log::info;
 use shared::{
-    files::{self, get_files_in_dir, hash_files},
-    paths::{
-        get_authlib_injector_path, get_libraries_dir, get_minecraft_dir, get_versions_extra_dir,
-    },
+    files,
+    paths::{get_libraries_dir, get_rel_instance_dir, get_versions_extra_dir},
     progress::{self, ProgressBar as _},
+    utils::BoxResult,
     version::{
-        extra_version_metadata::{
-            save_extra_version_metadata, AuthData, ExtraVersionMetadata, Object,
-        },
+        extra_version_metadata::{AuthData, ExtraVersionMetadata, Object},
         version_metadata::Library,
     },
 };
 
-use crate::{progress::TerminalProgressBar, utils::get_url_from_path};
-
-#[derive(thiserror::Error, Debug)]
-pub enum ExtraMetadataGeneratorError {
-    #[error("Path does not exist: {0}")]
-    PathDoesNotExist(String),
-}
-
-fn sync_paths(from: &Path, to: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if !from.exists() {
-        return Err(Box::new(ExtraMetadataGeneratorError::PathDoesNotExist(
-            from.to_string_lossy().to_string(),
-        )));
-    }
-    
-    if let Some(parent) = to.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    if from.is_file() && to.is_dir() {
-        // scary
-        std::fs::remove_dir_all(to)?;
-    }
-    if from.is_dir() && to.is_file() {
-        std::fs::remove_file(to)?;
-    }
-
-    if from.is_file() {
-        let mut options = file::CopyOptions::new();
-        options.overwrite = true;
-        options.skip_exist = true;
-
-        file::copy(from, to, &options)?;
-    } else {
-        let mut options = dir::CopyOptions::new();
-        options.overwrite = true;
-        options.skip_exist = true;
-
-        dir::copy(from, to.parent().unwrap(), &options)?;
-    }
-
-    Ok(())
-}
+use crate::{
+    progress::TerminalProgressBar,
+    utils::{url_from_path, url_from_rel_path},
+};
 
 async fn get_objects(
-    path: &Path,
-    data_dir: &Path,
-    version_name: &str,
+    copy_from: &Path,
+    from: &Path,
     download_server_base: &str,
-) -> Result<Vec<Object>, Box<dyn Error + Send + Sync>> {
-    let minecraft_dir = get_minecraft_dir(data_dir, version_name);
+    version_name: &str,
+) -> BoxResult<Vec<Object>> {
+    let files_in_dir = files::get_files_in_dir(from)?;
 
-    let paths = if path.is_file() {
-        vec![path.to_path_buf()]
-    } else {
-        get_files_in_dir(path)
-    };
-
-    let hashes = files::hash_files(paths.clone(), progress::no_progress_bar()).await?;
+    let rel_paths = files_in_dir
+        .iter()
+        .map(|p| p.strip_prefix(copy_from))
+        .collect::<Result<Vec<_>, _>>()?;
+    let hashes = files::hash_files(files_in_dir.clone(), progress::no_progress_bar()).await?;
 
     let mut objects = vec![];
-    for (path, hash) in paths.iter().zip(hashes.iter()) {
-        let url = get_url_from_path(path, data_dir, download_server_base)?;
+    for (rel_path, hash) in rel_paths.iter().zip(hashes.iter()) {
+        let url = url_from_rel_path(
+            &get_rel_instance_dir(version_name).join(rel_path),
+            download_server_base,
+        )?;
         objects.push(Object {
-            path: path
-                .strip_prefix(&minecraft_dir)?
-                .to_string_lossy()
-                .to_string(),
+            path: rel_path.to_string_lossy().to_string(),
             sha1: hash.clone(),
             url,
         });
     }
 
     Ok(objects)
+}
+
+const AUTHLIB_INJECTOR_URL: &str = "https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.5/authlib-injector-1.2.5.jar";
+const AUTHLIB_INJECTOR_FILENAME: &str = "authlib-injector.jar";
+
+async fn download_authlib_injector(
+    work_dir: &Path,
+    download_server_base: &str,
+) -> BoxResult<Object> {
+    let authlib_injector_path = work_dir.join(AUTHLIB_INJECTOR_FILENAME);
+    if !authlib_injector_path.exists() {
+        info!("Downloading authlib-injector");
+        let client = reqwest::Client::new();
+        files::download_file(&client, AUTHLIB_INJECTOR_URL, &authlib_injector_path).await?;
+    }
+
+    info!("Adding authlib-injector to extra metadata");
+
+    let hash = files::hash_file(&authlib_injector_path).await?;
+    let url = url_from_rel_path(
+        &PathBuf::from(AUTHLIB_INJECTOR_FILENAME),
+        download_server_base,
+    )?;
+
+    Ok(Object {
+        path: AUTHLIB_INJECTOR_FILENAME.to_string(),
+        sha1: hash,
+        url,
+    })
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -105,21 +89,20 @@ pub enum ExtraForgeLibsError {
 async fn get_extra_forge_libs(
     extra_forge_libs_paths: &Vec<PathBuf>,
     data_dir: &Path,
-    version_name: &str,
     download_server_base: &str,
-) -> Result<Vec<Library>, Box<dyn Error + Send + Sync>> {
-    let libraries_dir = get_libraries_dir(data_dir, version_name);
+) -> BoxResult<Vec<Library>> {
+    let libraries_dir = get_libraries_dir(data_dir);
 
     let progress_bar = Arc::new(TerminalProgressBar::new());
     progress_bar.set_message("Hashing extra forge libraries");
-    let hashes = hash_files(extra_forge_libs_paths.to_vec(), progress_bar).await?;
+    let hashes = files::hash_files(extra_forge_libs_paths.to_vec(), progress_bar).await?;
 
     let libraries = extra_forge_libs_paths
         .iter()
         .zip(hashes.iter())
         .filter(|(path, _)| path.is_file() && path.extension().map_or(false, |ext| ext == "jar"))
         .map(|(path, hash)| {
-            let url = get_url_from_path(path, data_dir, download_server_base)?;
+            let url = url_from_path(path, data_dir, download_server_base)?;
 
             let parts = path
                 .strip_prefix(&libraries_dir)?
@@ -152,47 +135,9 @@ async fn get_extra_forge_libs(
 
             Ok(Library::from_download(name, url, hash.clone()))
         })
-        .collect::<Result<_, Box<dyn Error + Send + Sync>>>()?;
+        .collect::<BoxResult<_>>()?;
 
     Ok(libraries)
-}
-
-const AUTHLIB_INJECTOR_URL: &str = "https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.5/authlib-injector-1.2.5.jar";
-
-async fn download_authlib_injector(
-    data_dir: &Path,
-    work_dir: &Path,
-    version_name: &str,
-    download_server_base: &str,
-) -> Result<Object, Box<dyn Error + Send + Sync>> {
-    let authlib_injector_path = work_dir.join("authlib-injector.jar");
-    if !authlib_injector_path.exists() {
-        info!("Downloading authlib-injector");
-        let client = reqwest::Client::new();
-        files::download_file(&client, AUTHLIB_INJECTOR_URL, &authlib_injector_path).await?;
-    }
-
-    let minecraft_dir = get_minecraft_dir(data_dir, version_name);
-    let output_authlib_injector_path = get_authlib_injector_path(&minecraft_dir);
-
-    info!("Adding authlib-injector to extra metadata");
-    std::fs::copy(&authlib_injector_path, &output_authlib_injector_path)?;
-
-    let hash = files::hash_file(&output_authlib_injector_path).await?;
-    let url = get_url_from_path(
-        &output_authlib_injector_path,
-        data_dir,
-        download_server_base,
-    )?;
-
-    Ok(Object {
-        path: output_authlib_injector_path
-            .strip_prefix(&minecraft_dir)?
-            .to_string_lossy()
-            .to_string(),
-        sha1: hash,
-        url,
-    })
 }
 
 pub struct ExtraMetadataGenerator {
@@ -204,6 +149,13 @@ pub struct ExtraMetadataGenerator {
     download_server_base: String,
     extra_forge_libs_paths: Vec<PathBuf>,
     auth_data: AuthData,
+}
+
+pub struct GeneratorResult {
+    pub paths_to_copy: Vec<PathBuf>,
+
+    // relative include path -> absolute source path
+    pub include_mapping: HashMap<String, PathBuf>,
 }
 
 impl ExtraMetadataGenerator {
@@ -229,11 +181,7 @@ impl ExtraMetadataGenerator {
         }
     }
 
-    pub async fn generate(
-        &self,
-        output_dir: &Path,
-        work_dir: &Path,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn generate(&self, work_dir: &Path) -> BoxResult<GeneratorResult> {
         info!(
             "Generating extra metadata for modpack {}",
             self.version_name
@@ -241,75 +189,65 @@ impl ExtraMetadataGenerator {
 
         let extra_forge_libs = get_extra_forge_libs(
             &self.extra_forge_libs_paths,
-            output_dir,
-            &self.version_name,
+            work_dir,
             &self.download_server_base,
         )
         .await?;
 
         let mut extra_metadata = ExtraVersionMetadata {
-            version_name: self.version_name.clone(),
             include: self.include.clone(),
             include_no_overwrite: self.include_no_overwrite.clone(),
-            objects: Vec::new(),
+            objects: vec![],
             resources_url_base: self.resources_url_base.clone(),
-            extra_forge_libs,
             auth_provider: self.auth_data.clone(),
+            extra_forge_libs,
+            authlib_injector: None,
         };
-
-        let mut objects = vec![];
+        let mut paths_to_copy = vec![];
+        let mut include_mapping = HashMap::new();
 
         if let Some(include_from) = &self.include_from {
+            let mut objects = vec![];
             let copy_from = PathBuf::from(include_from);
-            let copy_to = get_minecraft_dir(output_dir, &self.version_name);
 
             for include in self.include.iter().chain(self.include_no_overwrite.iter()) {
                 let from = copy_from.join(include);
-                let to = copy_to.join(include);
-
-                info!(
-                    "Copying {} from {} to {}",
-                    include,
-                    from.to_string_lossy(),
-                    to.to_string_lossy()
-                );
-                sync_paths(&from, &to)?;
 
                 objects.extend(
                     get_objects(
-                        &to,
-                        output_dir,
-                        &self.version_name,
+                        &copy_from,
+                        &from,
                         &self.download_server_base,
+                        &self.version_name,
                     )
                     .await?,
                 );
+                include_mapping.insert(include.clone(), from);
             }
+
+            extra_metadata.objects = objects;
         }
 
         match self.auth_data {
             AuthData::None => {}
             _ => {
-                objects.push(
-                    download_authlib_injector(
-                        output_dir,
-                        work_dir,
-                        &self.version_name,
-                        &self.download_server_base,
-                    )
-                    .await?,
-                );
+                extra_metadata.authlib_injector =
+                    Some(download_authlib_injector(work_dir, &self.download_server_base).await?);
+
+                paths_to_copy.push(work_dir.join(AUTHLIB_INJECTOR_FILENAME));
             }
         }
 
-        extra_metadata.objects = objects;
-
-        let versions_extra_dir = get_versions_extra_dir(output_dir);
-        save_extra_version_metadata(&versions_extra_dir, &self.version_name, &extra_metadata)
+        let versions_extra_dir = get_versions_extra_dir(work_dir);
+        extra_metadata
+            .save(&self.version_name, &versions_extra_dir)
             .await?;
 
         info!("Extra metadata for modpack {} generated", self.version_name);
 
-        Ok(())
+        Ok(GeneratorResult {
+            paths_to_copy,
+            include_mapping,
+        })
     }
 }

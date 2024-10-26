@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::files;
+use crate::{files::CheckEntry, paths::get_extra_metadata_path, utils::BoxResult};
 
 use super::{version_manifest::VersionInfo, version_metadata::Library};
 
@@ -43,10 +43,9 @@ impl AuthData {
     pub fn get_id(&self) -> String {
         match self {
             AuthData::Telegram(auth_data) => format!("telegram_{}", auth_data.auth_base_url),
-            AuthData::ElyBy(auth_data) => format!(
-                "elyby_{}_{}",
-                auth_data.client_id, auth_data.client_secret
-            ),
+            AuthData::ElyBy(auth_data) => {
+                format!("elyby_{}_{}", auth_data.client_id, auth_data.client_secret)
+            }
             AuthData::None => "none".to_string(),
         }
     }
@@ -54,8 +53,6 @@ impl AuthData {
 
 #[derive(Deserialize, Serialize)]
 pub struct ExtraVersionMetadata {
-    pub version_name: String,
-
     pub auth_provider: AuthData,
 
     #[serde(default)]
@@ -71,68 +68,51 @@ pub struct ExtraVersionMetadata {
     pub resources_url_base: Option<String>,
 
     #[serde(default)]
+    pub authlib_injector: Option<Object>,
+
+    #[serde(default)]
     pub extra_forge_libs: Vec<Library>,
 }
 
-pub fn get_extra_version_metadata_path(versions_extra_dir: &Path, version_name: &str) -> PathBuf {
-    versions_extra_dir.join(format!("{}.json", version_name))
-}
+impl ExtraVersionMetadata {
+    pub async fn read_local(
+        version_info: &VersionInfo,
+        versions_extra_dir: &Path,
+    ) -> BoxResult<Option<Self>> {
+        if version_info.extra_metadata_url.is_none() || version_info.extra_metadata_sha1.is_none() {
+            return Ok(None);
+        }
 
-pub async fn read_local_extra_version_metadata(
-    version_info: &VersionInfo,
-    versions_extra_dir: &Path,
-) -> Result<Option<ExtraVersionMetadata>, Box<dyn std::error::Error + Send + Sync>> {
-    if version_info.extra_metadata_url.is_none() || version_info.extra_metadata_sha1.is_none() {
-        return Ok(None);
+        let extra_version_metadata_path =
+            get_extra_metadata_path(versions_extra_dir, &version_info.get_name());
+        let extra_version_metadata_file = tokio::fs::read(extra_version_metadata_path).await?;
+
+        Ok(Some(serde_json::from_slice(&extra_version_metadata_file)?))
     }
 
-    let extra_version_metadata_path =
-        get_extra_version_metadata_path(versions_extra_dir, &version_info.get_name());
-    let extra_version_metadata_file = tokio::fs::read(extra_version_metadata_path).await?;
-    let extra_version_metadata: ExtraVersionMetadata =
-        serde_json::from_slice(&extra_version_metadata_file)?;
+    pub fn get_check_entry(
+        version_info: &VersionInfo,
+        versions_extra_dir: &Path,
+    ) -> Option<CheckEntry> {
+        if version_info.extra_metadata_url.is_none() || version_info.extra_metadata_sha1.is_none() {
+            return None;
+        }
 
-    Ok(Some(extra_version_metadata))
-}
+        let url = version_info.extra_metadata_url.as_ref().unwrap();
+        let sha1 = version_info.extra_metadata_sha1.as_ref().unwrap();
 
-pub async fn get_extra_version_metadata(
-    version_info: &VersionInfo,
-    versions_extra_dir: &Path,
-) -> Result<Option<ExtraVersionMetadata>, Box<dyn std::error::Error + Send + Sync>> {
-    if version_info.extra_metadata_url.is_none() || version_info.extra_metadata_sha1.is_none() {
-        return Ok(None);
+        Some(CheckEntry {
+            url: url.clone(),
+            remote_sha1: Some(sha1.clone()),
+            path: get_extra_metadata_path(versions_extra_dir, &version_info.get_name()),
+        })
     }
 
-    let url = version_info.extra_metadata_url.as_ref().unwrap();
-    let sha1 = version_info.extra_metadata_sha1.as_ref().unwrap();
+    pub async fn save(&self, version_name: &str, versions_extra_dir: &Path) -> BoxResult<()> {
+        let path = get_extra_metadata_path(versions_extra_dir, version_name);
+        let serialized = serde_json::to_string(self)?;
+        tokio::fs::write(path, serialized).await?;
 
-    let extra_version_metadata_path =
-        get_extra_version_metadata_path(versions_extra_dir, &version_info.get_name());
-    let need_download;
-    if !extra_version_metadata_path.exists() {
-        need_download = true;
-    } else {
-        let local_sha1 = files::hash_file(&extra_version_metadata_path).await?;
-        need_download = &local_sha1 != sha1;
+        Ok(())
     }
-
-    if need_download {
-        let client = reqwest::Client::new();
-        files::download_file(&client, url, &extra_version_metadata_path).await?;
-    }
-
-    Ok(read_local_extra_version_metadata(version_info, versions_extra_dir).await?)
-}
-
-pub async fn save_extra_version_metadata(
-    versions_extra_dir: &Path,
-    version_name: &str,
-    extra_version_metadata: &ExtraVersionMetadata,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let extra_version_metadata_path =
-        get_extra_version_metadata_path(versions_extra_dir, version_name);
-    let extra_version_metadata_file = serde_json::to_string(extra_version_metadata)?;
-    tokio::fs::write(extra_version_metadata_path, extra_version_metadata_file).await?;
-
-    Ok(())
 }
