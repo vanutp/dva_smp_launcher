@@ -141,10 +141,6 @@ impl CompleteVersionMetadata {
         &self.base.last().unwrap().id
     }
 
-    pub fn get_parent_id(&self) -> &str {
-        &self.base[0].id
-    }
-
     pub fn get_asset_index(&self) -> BoxResult<&AssetIndex> {
         Ok(self.base[0]
             .asset_index
