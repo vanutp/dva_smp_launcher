@@ -1,6 +1,7 @@
-use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
+
+use shared::utils::BoxResult;
 
 use crate::config::runtime_config::VersionAuthData;
 use crate::lang::LangMessage;
@@ -54,7 +55,7 @@ pub async fn auth(
     existing_token: Option<String>,
     auth_provider: Arc<dyn AuthProvider + Send + Sync>,
     auth_message_provider: Arc<AuthMessageProvider>,
-) -> Result<VersionAuthData, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<VersionAuthData> {
     let mut token = existing_token;
     let mut user_info: Option<UserInfo> = None;
 

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use shared::{
-    files::CheckDownloadEntry,
+    files::CheckEntry,
     version::version_metadata::{Library, Os, Rule, VariableArgument},
 };
 
@@ -126,10 +126,7 @@ pub fn get_natives_path(library: &Library, libraries_dir: &Path) -> Option<PathB
     Some(path)
 }
 
-pub fn get_check_download_entries(
-    library: &Library,
-    libraries_dir: &Path,
-) -> Vec<CheckDownloadEntry> {
+pub fn get_check_download_entries(library: &Library, libraries_dir: &Path) -> Vec<CheckEntry> {
     let natives_name = get_natives_name(library);
 
     library.get_specific_check_download_entries(natives_name, libraries_dir)

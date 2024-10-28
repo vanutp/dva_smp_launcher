@@ -1,40 +1,48 @@
 use reqwest::Client;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::error::Error;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::fs as async_fs;
-use tokio::io::AsyncWriteExt;
+use tokio::fs;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt};
+use walkdir::WalkDir;
 
 use crate::progress::{run_tasks_with_progress, ProgressBar};
+use crate::utils::BoxResult;
 
-pub fn get_files_in_dir(path: &Path) -> Vec<PathBuf> {
+pub fn get_files_in_dir(path: &Path) -> BoxResult<Vec<PathBuf>> {
     let mut files = Vec::new();
     if path.is_file() {
         files.push(path.to_path_buf());
-    } else if let Ok(entries) = fs::read_dir(path) {
+    } else if path.is_dir() {
+        let entries = std::fs::read_dir(path)?;
         for entry in entries.flatten() {
-            files.extend(
-                get_files_in_dir(&entry.path())
-                    .into_iter()
-                    .map(|x| x.to_path_buf()),
-            );
+            files.extend(get_files_in_dir(&entry.path())?);
         }
     }
-    files
+    Ok(files)
 }
 
-pub async fn hash_file(path: &Path) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let data = async_fs::read(path).await?;
-    Ok(format!("{:x}", Sha1::digest(&data)))
+pub async fn hash_file(path: &Path) -> BoxResult<String> {
+    let mut file = fs::File::open(path).await?;
+    let mut hasher = Sha1::new();
+    let mut buffer = [0; 1024];
+
+    loop {
+        let n = file.read(&mut buffer).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 pub async fn hash_files<M>(
     files: Vec<PathBuf>,
     progress_bar: Arc<dyn ProgressBar<M> + Send + Sync>,
-) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<Vec<String>> {
     let tasks_count = files.len() as u64;
 
     let tasks = files
@@ -44,11 +52,7 @@ pub async fn hash_files<M>(
     run_tasks_with_progress(tasks, progress_bar, tasks_count, num_cpus::get()).await
 }
 
-pub async fn download_file(
-    client: &Client,
-    url: &str,
-    path: &Path,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn download_file(client: &Client, url: &str, path: &Path) -> BoxResult<()> {
     let response = client
         .get(url)
         .send()
@@ -58,8 +62,8 @@ pub async fn download_file(
         .await?;
 
     let parent_dir = path.parent().expect("Invalid file path");
-    async_fs::create_dir_all(parent_dir).await?;
-    let mut file = async_fs::File::create(path).await?;
+    tokio::fs::create_dir_all(parent_dir).await?;
+    let mut file = tokio::fs::File::create(path).await?;
 
     file.write_all(&response).await?;
     Ok(())
@@ -74,7 +78,7 @@ pub struct DownloadEntry {
 pub async fn download_files<M>(
     download_entries: Vec<DownloadEntry>,
     progress_bar: Arc<dyn ProgressBar<M> + Send + Sync>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> BoxResult<()> {
     let max_concurrent_downloads: usize = num_cpus::get() * 4;
     let client = Client::new();
 
@@ -89,10 +93,7 @@ pub async fn download_files<M>(
     Ok(())
 }
 
-pub async fn fetch_file(
-    client: &Client,
-    url: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn fetch_file(client: &Client, url: &str) -> BoxResult<Vec<u8>> {
     Ok(client
         .get(url)
         .send()
@@ -106,7 +107,7 @@ pub async fn fetch_file(
 pub async fn fetch_files<M>(
     urls: Vec<String>,
     progress_bar: Arc<dyn ProgressBar<M> + Send + Sync>,
-) -> Result<Vec<Vec<u8>>, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<Vec<Vec<u8>>> {
     let max_concurrent_downloads: usize = num_cpus::get() * 4;
     let client = Client::new();
 
@@ -126,7 +127,7 @@ pub async fn fetch_files<M>(
 }
 
 #[derive(Debug)]
-pub struct CheckDownloadEntry {
+pub struct CheckEntry {
     pub url: String,
     pub remote_sha1: Option<String>,
     pub path: PathBuf,
@@ -139,9 +140,9 @@ pub enum CheckDownloadError {
 }
 
 pub async fn get_download_entries<M>(
-    check_entries: Vec<CheckDownloadEntry>,
+    check_entries: Vec<CheckEntry>,
     progress_bar: Arc<dyn ProgressBar<M> + Send + Sync>,
-) -> Result<Vec<DownloadEntry>, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<Vec<DownloadEntry>> {
     let to_hash: Vec<_> = check_entries
         .iter()
         .filter_map(|entry| {
@@ -184,4 +185,139 @@ pub async fn get_download_entries<M>(
     }
 
     Ok(download_entries)
+}
+
+async fn remove_empty_dirs(path: &Path) -> BoxResult<()> {
+    for entry in WalkDir::new(path)
+        .contents_first(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.path().is_dir()
+            && fs::read_dir(entry.path())
+                .await?
+                .next_entry()
+                .await?
+                .is_none()
+        {
+            fs::remove_dir(entry.path()).await?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum CopyFilesError {
+    #[error("Source entry {0} does not exist")]
+    SourceEntryMissing(PathBuf),
+    #[error("Invalid path")]
+    InvalidPath,
+}
+
+// copy files mapped files and directories
+// and delete all other files and directores in the target directory
+// mapping: target -> source
+pub async fn sync_mapping(target_dir: &Path, mapping: &HashMap<PathBuf, PathBuf>) -> BoxResult<()> {
+    let mut mappings_files = HashMap::new();
+    for (target, source) in mapping {
+        if !target.starts_with(target_dir) {
+            return Err(CopyFilesError::InvalidPath.into());
+        }
+        if source.is_file() {
+            mappings_files.insert(target.clone(), source.clone());
+        } else if source.is_dir() {
+            let files = get_files_in_dir(&source)?;
+            for file in files {
+                let relative_path = file.strip_prefix(&source).unwrap();
+                let target_path = target.join(relative_path);
+                mappings_files.insert(target_path, file);
+            }
+        } else {
+            return Err(CopyFilesError::SourceEntryMissing(source.clone()).into());
+        }
+    }
+
+    let paths = get_files_in_dir(&target_dir)?;
+    for path in paths {
+        if !mappings_files.contains_key(&path) {
+            fs::remove_file(&path).await?;
+        }
+    }
+
+    remove_empty_dirs(&target_dir).await?;
+
+    let fut = mappings_files.iter().map(|(target, source)| async move {
+        fs::create_dir_all(target.parent().ok_or(CopyFilesError::InvalidPath)?).await?;
+        if target.is_dir() {
+            fs::remove_dir(&target).await?;
+        }
+        if !target.exists() || hash_file(&source).await? != hash_file(&target).await? {
+            fs::copy(&source, &target).await?;
+        }
+        BoxResult::<()>::Ok(())
+    });
+
+    let results = futures::future::join_all(fut).await;
+    for result in results {
+        result?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use maplit::hashmap;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_sync_mapping() {
+        let temp_dir = env::temp_dir().join("modpack_builder_test");
+        let source_dir = temp_dir.join("source");
+        let target_dir = temp_dir.join("target");
+        let file1 = source_dir.join("file1");
+        let dir1 = source_dir.join("dir1");
+        let file2 = dir1.join("file2");
+        let dir2 = source_dir.join("dir2");
+        let file3 = dir2.join("file3");
+
+        let file1_target = target_dir.join("file1");
+        let file4 = target_dir.join("file4");
+        let dir1_target = target_dir.join("dir1");
+        let file2_target = dir1_target.join("file2");
+        let file5 = dir1_target.join("file5");
+
+        fs::create_dir_all(&dir1).await.unwrap();
+        fs::create_dir_all(&dir2).await.unwrap();
+        fs::create_dir_all(&dir1_target).await.unwrap();
+        fs::write(&file1, "file1").await.unwrap();
+        fs::write(&file2, "file2").await.unwrap();
+        fs::write(&file3, "file3").await.unwrap();
+        fs::write(&file1_target, "file1_other").await.unwrap();
+        fs::write(&file4, "file4").await.unwrap();
+        fs::write(&file2_target, "file2").await.unwrap();
+        fs::write(&file5, "file5").await.unwrap();
+
+        let mappings = hashmap! {
+            file1_target.clone() => file1.clone(),
+            file2_target.clone() => file2.clone(),
+            target_dir.join("dir2") => dir2.clone(),
+        };
+
+        sync_mapping(&target_dir, &mappings).await.unwrap();
+
+        assert!(file1_target.exists());
+        assert!(fs::read_to_string(&file1_target).await.unwrap() == "file1");
+        assert!(file2_target.exists());
+        assert!(fs::read_to_string(&file2_target).await.unwrap() == "file2");
+        assert!(target_dir.join("dir2").join("file3").exists());
+        assert!(!file4.exists());
+        assert!(!file5.exists());
+
+        fs::remove_dir_all(&source_dir).await.unwrap();
+        fs::remove_dir_all(&target_dir).await.unwrap();
+    }
 }

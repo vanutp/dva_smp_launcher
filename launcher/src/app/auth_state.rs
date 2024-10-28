@@ -245,8 +245,9 @@ impl AuthState {
     }
 
     pub fn ready_for_launch(&self, auth_data: &AuthData, config: &Config) -> bool {
-        self.runtime_auth.contains_key(&auth_data.get_id()) ||
-            self.auth_status == AuthStatus::AuthorizeErrorOffline && config.get_version_auth_data(auth_data).is_some()
+        self.runtime_auth.contains_key(&auth_data.get_id())
+            || self.auth_status == AuthStatus::AuthorizeErrorOffline
+                && config.get_version_auth_data(auth_data).is_some()
     }
 
     pub fn online(&self) -> bool {

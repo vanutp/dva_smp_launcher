@@ -38,6 +38,7 @@ The `spec.json` file is used to define the specifications for generating modpack
 
 - **download_server_base**: The base URL where the modpack will be deployed. All files in the generated folder (`generated` by default) must be accessible by `<download_server_base>/<file_relative_path>` after deployment. For example, the version manifest has to be at `<download_server_base>/modpacks/version_manifest.json`.
 - **resources_url_base**: The base URL for assets (optional). Should be equal to `<download_server_base>/assets/objects` if the generated folder structure is not changed after upload.
+- **replace_download_urls**: A boolean indicating whether to replace download URLs (e.g., of vanilla libraries or assets).
 - **versions**: An array of version specifications (see below for details).
 - **exec_before_all**: A bash command to execute before processing all versions (optional).
 - **exec_after_all**: A bash command to execute after processing all versions (optional). Can be used to automatically deploy the generated files in any possible way (e.g., by `rsync`'ing them to the server with `nginx`).
@@ -51,7 +52,6 @@ The `spec.json` file is used to define the specifications for generating modpack
 - **include**: A list of additional files or directories to include in the modpack (optional; e.g., mods).
 - **include_no_overwrite**: A list of files or directories to include without overwriting existing files (optional; e.g., configs).
 - **include_from**: A directory from which to include files (optional).
-- **replace_download_urls**: A boolean indicating whether to replace download URLs (e.g., of vanilla libraries or assets).
 - **auth_provider**: Authentication data for accessing protected resources (optional).
   - **type**: The authentication provider name (e.g., "telegram" for [this telegram format](https://foxlab.dev/minecraft/tgauth-backend)).
   - Any additional fields for the selected authentication provider.

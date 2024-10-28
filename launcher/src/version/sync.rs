@@ -3,12 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use log::{debug, info};
-use shared::paths::{get_client_jar_path, get_libraries_dir, get_minecraft_dir, get_natives_dir};
+use shared::paths::{get_instance_dir, get_libraries_dir, get_natives_dir};
+use shared::utils::BoxResult;
 use shared::version::asset_metadata::AssetsMetadata;
 use std::fs;
 use zip::ZipArchive;
 
-use shared::files::{self, CheckDownloadEntry};
+use shared::files::{self, CheckEntry};
 use shared::progress::{self, ProgressBar};
 use shared::version::extra_version_metadata::ExtraVersionMetadata;
 use shared::version::version_metadata;
@@ -16,30 +17,33 @@ use shared::version::version_metadata;
 use crate::lang::LangMessage;
 
 use super::complete_version_metadata::CompleteVersionMetadata;
-use super::overrides::with_overrides;
 use super::rules;
 
 #[derive(thiserror::Error, Debug)]
 pub enum VersionMetadataError {
     #[error("Library {0} has neither SHA1 hash nor SHA1 URL")]
     NoSha1(String),
-    #[error("Missing client download")]
-    MissingClientDownload,
 }
 
-async fn get_objects_downloads(
+fn get_objects_entries(
     extra_version_metadata: &ExtraVersionMetadata,
     force_overwrite: bool,
-    modpack_dir: &Path,
-) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    instance_dir: &Path,
+) -> BoxResult<Vec<CheckEntry>> {
     let objects = &extra_version_metadata.objects;
     let include = &extra_version_metadata.include;
     let include_no_overwrite = &extra_version_metadata.include_no_overwrite;
 
-    let get_modpack_files = |x| files::get_files_in_dir(&modpack_dir.join(x));
-    let no_overwrite_iter = include_no_overwrite.iter().map(get_modpack_files).flatten();
-    let mut to_overwrite: HashSet<PathBuf> =
-        include.iter().map(get_modpack_files).flatten().collect();
+    let get_modpack_files = |x| files::get_files_in_dir(&instance_dir.join(x)).ok();
+    let no_overwrite_iter = include_no_overwrite
+        .iter()
+        .filter_map(get_modpack_files)
+        .flatten();
+    let mut to_overwrite: HashSet<PathBuf> = include
+        .iter()
+        .filter_map(get_modpack_files)
+        .flatten()
+        .collect();
     let mut no_overwrite = HashSet::new();
     if !force_overwrite {
         no_overwrite.extend(no_overwrite_iter);
@@ -53,7 +57,7 @@ async fn get_objects_downloads(
 
     // delete extra to_overwrite files
     let objects_hashset: HashSet<PathBuf> =
-        objects.iter().map(|x| modpack_dir.join(&x.path)).collect();
+        objects.iter().map(|x| instance_dir.join(&x.path)).collect();
     let _ = to_overwrite
         .iter()
         .map(|x| {
@@ -65,12 +69,12 @@ async fn get_objects_downloads(
 
     let mut download_entries = vec![];
     for object in objects.iter() {
-        let object_path = modpack_dir.join(&object.path);
+        let object_path = instance_dir.join(&object.path);
 
         if no_overwrite.contains(&object_path) {
             continue;
         }
-        download_entries.push(CheckDownloadEntry {
+        download_entries.push(CheckEntry {
             url: object.url.clone(),
             remote_sha1: Some(object.sha1.clone()),
             path: object_path,
@@ -80,12 +84,12 @@ async fn get_objects_downloads(
     Ok(download_entries)
 }
 
-async fn get_libraries_downloads(
+async fn get_libraries_entries(
     libraries: &Vec<version_metadata::Library>,
     libraries_dir: &Path,
-) -> Result<Vec<CheckDownloadEntry>, Box<dyn std::error::Error + Send + Sync>> {
+) -> BoxResult<Vec<CheckEntry>> {
     let mut sha1_urls = HashMap::<PathBuf, String>::new();
-    let mut check_download_entries: Vec<CheckDownloadEntry> = Vec::new();
+    let mut check_download_entries: Vec<CheckEntry> = Vec::new();
 
     for library in libraries {
         for entry in rules::get_check_download_entries(library, libraries_dir) {
@@ -99,7 +103,7 @@ async fn get_libraries_downloads(
                 match library.get_sha1_url() {
                     Some(sha1_url) => {
                         sha1_urls.insert(entry.path.clone(), sha1_url);
-                        check_download_entries.push(CheckDownloadEntry {
+                        check_download_entries.push(CheckEntry {
                             remote_sha1: None,
                             ..entry
                         });
@@ -129,10 +133,12 @@ async fn get_libraries_downloads(
             if entry.remote_sha1.is_none() {
                 let sha1 = missing_hashes.get(&entry.path);
                 if let Some(sha1) = sha1 {
-                    Ok(CheckDownloadEntry {
+                    Ok(CheckEntry {
                         remote_sha1: Some(sha1.clone()),
                         ..entry
                     })
+                } else if !entry.path.exists() {
+                    Ok(entry)
                 } else {
                     Err(Box::new(VersionMetadataError::NoSha1(
                         entry.path.to_str().unwrap_or("no path").to_string(),
@@ -151,7 +157,7 @@ fn extract_natives(
     libraries: &Vec<version_metadata::Library>,
     libraries_dir: &Path,
     natives_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> BoxResult<()> {
     for library in libraries {
         if let Some(natives_path) = rules::get_natives_path(library, libraries_dir) {
             let exclude = library.get_extract().map(|x| {
@@ -168,11 +174,7 @@ fn extract_natives(
     Ok(())
 }
 
-fn extract_files(
-    src: &Path,
-    dest: &Path,
-    exclude: Option<HashSet<String>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn extract_files(src: &Path, dest: &Path, exclude: Option<HashSet<String>>) -> BoxResult<()> {
     let exclude = exclude.unwrap_or_default();
 
     let file = fs::File::open(src)?;
@@ -206,82 +208,62 @@ fn extract_files(
     Ok(())
 }
 
-fn get_client_download_entry(
+fn get_authlib_injector_entry(
     version_metadata: &CompleteVersionMetadata,
     launcher_dir: &Path,
-) -> Result<CheckDownloadEntry, Box<dyn std::error::Error + Send + Sync>> {
-    let client_download = version_metadata
-        .base
-        .downloads
-        .as_ref()
-        .ok_or(VersionMetadataError::MissingClientDownload)?
-        .client
-        .as_ref()
-        .ok_or(VersionMetadataError::MissingClientDownload)?;
+) -> Option<CheckEntry> {
+    if let Some(extra) = version_metadata.get_extra() {
+        if let Some(authlib_injector) = &extra.authlib_injector {
+            return Some(CheckEntry {
+                url: authlib_injector.url.clone(),
+                remote_sha1: Some(authlib_injector.sha1.clone()),
+                path: launcher_dir.join(&authlib_injector.path),
+            });
+        }
+    }
 
-    Ok(CheckDownloadEntry {
-        url: client_download.url.clone(),
-        remote_sha1: Some(client_download.sha1.clone()),
-        path: get_client_jar_path(launcher_dir, &version_metadata.base.id),
-    })
-}
-
-pub struct SyncData {
-    pub launcher_dir: PathBuf,
-    pub assets_dir: PathBuf,
-    pub version_name: String,
+    None
 }
 
 pub async fn sync_modpack(
     version_metadata: &CompleteVersionMetadata,
     force_overwrite: bool,
-    path_data: SyncData,
+    launcher_dir: &Path,
+    assets_dir: &Path,
     progress_bar: Arc<dyn ProgressBar<LangMessage> + Send + Sync>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let SyncData {
-        launcher_dir,
-        assets_dir,
-        version_name,
-    } = path_data;
+) -> BoxResult<()> {
+    let version_name = version_metadata.get_name();
 
-    let libraries_dir = get_libraries_dir(&launcher_dir, &version_name);
-    let natives_dir = get_natives_dir(&launcher_dir, &version_name);
-    let modpack_dir = get_minecraft_dir(&launcher_dir, &version_name);
+    let libraries_dir = get_libraries_dir(launcher_dir);
+    let natives_dir = get_natives_dir(launcher_dir);
+    let instance_dir = get_instance_dir(launcher_dir, &version_name);
 
-    let mut check_download_entries = vec![];
+    let mut check_entries = vec![];
 
-    check_download_entries.push(get_client_download_entry(version_metadata, &launcher_dir)?);
+    check_entries.push(version_metadata.get_client_check_entry(launcher_dir)?);
 
-    let libraries = with_overrides(
-        version_metadata.base.get_libraries(),
-        &version_metadata.base.hierarchy_ids,
-    );
-    let mut libraries_with_forge = libraries.clone();
-    libraries_with_forge.extend(version_metadata.get_extra_forge_libs().into_iter().cloned());
+    let mut libraries = version_metadata.get_libraries_with_overrides();
+    libraries.extend(version_metadata.get_extra_forge_libs());
+    check_entries.extend(get_libraries_entries(&libraries, &libraries_dir).await?);
 
-    check_download_entries
-        .extend(get_libraries_downloads(&libraries_with_forge, &libraries_dir).await?);
-
-    if let Some(extra) = &version_metadata.extra {
-        check_download_entries
-            .extend(get_objects_downloads(extra, force_overwrite, &modpack_dir).await?);
+    if let Some(extra) = version_metadata.get_extra() {
+        check_entries.extend(get_objects_entries(extra, force_overwrite, &instance_dir)?);
     }
 
-    let asset_index = &version_metadata.base.asset_index;
-    let asset_metadata = AssetsMetadata::read_or_fetch(asset_index, &assets_dir).await?;
+    if let Some(authlib_injector) = get_authlib_injector_entry(version_metadata, launcher_dir) {
+        check_entries.push(authlib_injector);
+    }
 
-    check_download_entries.extend(
-        asset_metadata
-            .get_check_downloads(&assets_dir, version_metadata.get_resources_url_base())?,
+    let asset_index = version_metadata.get_asset_index()?;
+    let asset_metadata = AssetsMetadata::read_or_download(asset_index, assets_dir).await?;
+
+    check_entries.extend(
+        asset_metadata.get_check_entries(assets_dir, version_metadata.get_resources_url_base())?,
     );
 
-    info!(
-        "Got {} check download entries",
-        check_download_entries.len()
-    );
+    info!("Got {} check download entries", check_entries.len());
     progress_bar.set_message(LangMessage::CheckingFiles);
-    let download_entries =
-        files::get_download_entries(check_download_entries, progress_bar.clone()).await?;
+    let download_entries = files::get_download_entries(check_entries, progress_bar.clone()).await?;
 
     info!("Got {} download entries", download_entries.len());
 
@@ -297,10 +279,6 @@ pub async fn sync_modpack(
 
     progress_bar.set_message(LangMessage::DownloadingFiles);
     files::download_files(download_entries, progress_bar).await?;
-
-    asset_metadata
-        .save_to_file(&asset_index.id, &assets_dir)
-        .await?;
 
     if libraries_changed {
         extract_natives(&libraries, &libraries_dir, &natives_dir)?;

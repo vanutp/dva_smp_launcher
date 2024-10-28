@@ -1,9 +1,10 @@
 use futures::future::join_all;
-use std::error::Error;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+
+use crate::utils::BoxResult;
 
 #[derive(Clone)]
 pub struct Unit {
@@ -50,9 +51,9 @@ pub async fn run_tasks_with_progress<M, T, Fut>(
     progress_bar: Arc<dyn ProgressBar<M> + Send + Sync>,
     total_size: u64,
     max_concurrent_tasks: usize,
-) -> Result<Vec<T>, Box<dyn std::error::Error + Send + Sync>>
+) -> BoxResult<Vec<T>>
 where
-    Fut: Future<Output = Result<T, Box<dyn Error + Send + Sync>>>,
+    Fut: Future<Output = BoxResult<T>>,
 {
     progress_bar.set_length(total_size);
 

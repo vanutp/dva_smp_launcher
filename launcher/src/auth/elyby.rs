@@ -7,15 +7,13 @@ use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
 use serde::Deserialize;
-use tokio::net::TcpListener;
-use tokio::time::sleep;
+use shared::utils::{BoxError, BoxResult};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{
-    error::Error,
-    sync::Arc,
-};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 use crate::config::build_config;
 use crate::lang::LangMessage;
@@ -67,7 +65,7 @@ async fn exchange_code(
     client_secret: &str,
     code: &str,
     redirect_uri: &str,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<String> {
     let client = Client::new();
     let resp = client
         .post("https://account.ely.by/api/oauth2/v1/token")
@@ -105,7 +103,7 @@ async fn exchange_code(
 enum TokenResult {
     Token(String),
     InvalidCode,
-    Error(Box<dyn Error + Send + Sync>),
+    Error(BoxError),
 }
 
 async fn handle_request(
@@ -114,30 +112,32 @@ async fn handle_request(
     redirect_uri: String,
     req: Request<hyper::body::Incoming>,
     token_tx: Arc<mpsc::UnboundedSender<TokenResult>>,
-) -> Result<Response<Full<Bytes>>, Box<dyn Error + Send + Sync>> {
+) -> BoxResult<Response<Full<Bytes>>> {
     let query = req.uri().query().ok_or("Missing query string")?;
     let auth_query: AuthQuery = serde_urlencoded::from_str(query)?;
 
-    let token_result = match exchange_code(&client_id, &client_secret, &auth_query.code, &redirect_uri).await {
-        Ok(token) => TokenResult::Token(token),
-        Err(e) => match e.downcast::<AuthError>() {
-            Ok(e) => {
-                match *e {
+    let token_result =
+        match exchange_code(&client_id, &client_secret, &auth_query.code, &redirect_uri).await {
+            Ok(token) => TokenResult::Token(token),
+            Err(e) => match e.downcast::<AuthError>() {
+                Ok(e) => match *e {
                     AuthError::InvalidCode => TokenResult::InvalidCode,
                     _ => TokenResult::Error(e),
-                }
-            }
-            Err(e) => TokenResult::Error(e),
-        }
-    };
-    
+                },
+                Err(e) => TokenResult::Error(e),
+            },
+        };
+
     let response = match &token_result {
         TokenResult::Token(_) => Response::builder()
             .status(302)
-            .header("Location", format!(
-                "https://account.ely.by/oauth2/code/success?appName={}",
-                &build_config::get_launcher_name(),
-            ))
+            .header(
+                "Location",
+                format!(
+                    "https://account.ely.by/oauth2/code/success?appName={}",
+                    &build_config::get_launcher_name(),
+                ),
+            )
             .body(Full::new(Bytes::from("")))?,
 
         TokenResult::InvalidCode => Response::builder()
@@ -174,10 +174,7 @@ impl ElyByAuthProvider {
 
 #[async_trait]
 impl AuthProvider for ElyByAuthProvider {
-    async fn authenticate(
-        &self,
-        message_provider: Arc<dyn MessageProvider>,
-    ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    async fn authenticate(&self, message_provider: Arc<dyn MessageProvider>) -> BoxResult<String> {
         let addr = SocketAddr::from(([127, 0, 0, 1], 0));
         let listener = TcpListener::bind(addr).await?;
 
@@ -204,16 +201,20 @@ impl AuthProvider for ElyByAuthProvider {
             let (token_tx, mut token_rx) = mpsc::unbounded_channel();
             let token_tx = Arc::new(token_tx);
 
-            http.serve_connection(io, service_fn(|req: Request<hyper::body::Incoming>| {
-                let token_tx = token_tx.clone();
-                handle_request(
-                    self.client_id.clone(),
-                    self.client_secret.clone(),
-                    redirect_uri.clone(),
-                    req,
-                    token_tx,
-                )
-            })).await?;
+            http.serve_connection(
+                io,
+                service_fn(|req: Request<hyper::body::Incoming>| {
+                    let token_tx = token_tx.clone();
+                    handle_request(
+                        self.client_id.clone(),
+                        self.client_secret.clone(),
+                        redirect_uri.clone(),
+                        req,
+                        token_tx,
+                    )
+                }),
+            )
+            .await?;
 
             if let Some(token) = token_rx.recv().await {
                 match token {
@@ -229,7 +230,7 @@ impl AuthProvider for ElyByAuthProvider {
         }
     }
 
-    async fn get_user_info(&self, token: &str) -> Result<UserInfo, Box<dyn Error + Send + Sync>> {
+    async fn get_user_info(&self, token: &str) -> BoxResult<UserInfo> {
         let client = Client::new();
         let resp = client
             .get("https://account.ely.by/api/account/v1/info")

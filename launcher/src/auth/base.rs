@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use shared::version::extra_version_metadata::AuthData;
-use std::{error::Error, sync::Arc};
+use shared::{utils::BoxResult, version::extra_version_metadata::AuthData};
+use std::sync::Arc;
 
 use crate::message_provider::MessageProvider;
 
@@ -15,12 +15,9 @@ pub struct UserInfo {
 
 #[async_trait]
 pub trait AuthProvider {
-    async fn authenticate(
-        &self,
-        message_provider: Arc<dyn MessageProvider>,
-    ) -> Result<String, Box<dyn Error + Send + Sync>>;
+    async fn authenticate(&self, message_provider: Arc<dyn MessageProvider>) -> BoxResult<String>;
 
-    async fn get_user_info(&self, token: &str) -> Result<UserInfo, Box<dyn Error + Send + Sync>>;
+    async fn get_user_info(&self, token: &str) -> BoxResult<UserInfo>;
 
     fn get_auth_url(&self) -> Option<String>;
 

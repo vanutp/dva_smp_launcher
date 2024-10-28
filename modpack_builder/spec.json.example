@@ -1,13 +1,13 @@
 {
-    "download_server_base": "https://<your_domain>",
-    "resources_url_base": "https://<your_domain>/assets/objects",
+    "download_server_base": "https://<your_domain>/<some path>",
+    "resources_url_base": "https://<your_domain>/<some path>/assets/objects",
+    "replace_download_urls": true,
     "versions": [
         {
             "name": "Monifactory",
             "minecraft_version": "1.20.1",
             "loader_name": "forge",
             "loader_version": "47.3.7",
-            "replace_download_urls": true,
             "include": [
                 "mods"
             ],
