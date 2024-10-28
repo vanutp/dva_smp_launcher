@@ -2,7 +2,8 @@
 .idea/
 .DS_Store
 *.spec
-.flatpak-builder/
-.venv
 target
 .vscode
+spec.json
+generated/
+workdir/

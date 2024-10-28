@@ -1,6 +1,6 @@
 use log::{debug, error, info, warn};
 use serde::Deserialize;
-use std::{collections::HashMap, path::Path};
+use std::{collections::{HashMap, HashSet}, path::Path};
 use tokio::fs;
 
 use shared::{
@@ -94,6 +94,7 @@ impl VersionsSpec {
         let vanilla_manifest = VersionManifest::fetch(VANILLA_MANIFEST_URL).await?;
 
         let mut version_manifest = VersionManifest { versions: vec![] };
+        let mut synced_metadata = HashSet::new();
         let mut mapping = HashMap::new();
 
         for version in &self.versions {
@@ -157,6 +158,10 @@ impl VersionsSpec {
                 let replaced_metadata_dir = get_replaced_metadata_dir(work_dir);
 
                 for metadata in result.metadata.iter_mut() {
+                    if synced_metadata.contains(&metadata.id) {
+                        info!("Skipping {}, it is already synced", &metadata.id);
+                        continue;
+                    }
                     info!("Syncing {}", &metadata.id);
 
                     let sync_result = sync_version(metadata, work_dir).await?;
@@ -170,6 +175,8 @@ impl VersionsSpec {
 
                     replace_download_urls(metadata, &self.download_server_base, work_dir).await?;
                     metadata.save(&replaced_metadata_dir).await?;
+
+                    synced_metadata.insert(metadata.id.clone());
 
                     mapping.insert(
                         get_metadata_path(&versions_dir, &metadata.id),
