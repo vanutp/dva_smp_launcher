@@ -7,3 +7,5 @@ target
 spec.json
 generated/
 workdir/
+.direnv/
+.cargo/config.toml
