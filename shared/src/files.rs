@@ -53,6 +53,14 @@ pub async fn hash_files<M>(
 }
 
 pub async fn download_file(client: &Client, url: &str, path: &Path) -> BoxResult<()> {
+    let parent_dir = path.parent().expect("Invalid file path");
+    tokio::fs::create_dir_all(parent_dir).await?;
+
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        tokio::fs::copy(Path::new(url), path).await?;
+        return Ok(());
+    }
+
     let response = client
         .get(url)
         .send()
@@ -61,8 +69,6 @@ pub async fn download_file(client: &Client, url: &str, path: &Path) -> BoxResult
         .bytes()
         .await?;
 
-    let parent_dir = path.parent().expect("Invalid file path");
-    tokio::fs::create_dir_all(parent_dir).await?;
     let mut file = tokio::fs::File::create(path).await?;
 
     file.write_all(&response).await?;

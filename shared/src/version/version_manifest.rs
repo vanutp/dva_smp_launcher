@@ -67,6 +67,11 @@ pub struct VersionManifest {
 
 impl VersionManifest {
     pub async fn fetch(url: &str) -> BoxResult<Self> {
+        println!("{}", url);
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Self::read_local(Path::new(url)).await;
+        }
+
         let client = Client::new();
         let res = client
             .get(url)
