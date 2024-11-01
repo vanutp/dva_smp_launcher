@@ -25,12 +25,18 @@ pub struct ElyByAuthData {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+pub struct MicrosoftAuthData {
+    pub client_id: String,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum AuthData {
     None,
     Telegram(TelegramAuthData),
     #[serde(rename = "ely.by")]
     ElyBy(ElyByAuthData),
+    Microsoft(MicrosoftAuthData),
 }
 
 impl Default for AuthData {
@@ -46,6 +52,7 @@ impl AuthData {
             AuthData::ElyBy(auth_data) => {
                 format!("elyby_{}_{}", auth_data.client_id, auth_data.client_secret)
             }
+            AuthData::Microsoft(auth_data) => format!("microsoft_{}", auth_data.client_id),
             AuthData::None => "none".to_string(),
         }
     }

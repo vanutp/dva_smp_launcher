@@ -36,6 +36,8 @@ hyper = { version = "1.5.0", features = ["full"] }
 hyper-util = { version = "0.1.9", features = ["full"] }
 http-body-util = "0.1.2"
 serde_urlencoded = "0.7.1"
+minecraft-msa-auth = "0.4.0"
+oauth2 = "4.4.2"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["fileapi", "winbase"] }

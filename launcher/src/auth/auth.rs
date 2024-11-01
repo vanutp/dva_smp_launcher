@@ -76,6 +76,7 @@ pub async fn auth(
             }
 
             Err(e) => {
+                println!("Error: {:?}", e);
                 let mut token_error = false;
                 if let Some(re) = e.downcast_ref::<reqwest::Error>() {
                     if let Some(status) = re.status() {
